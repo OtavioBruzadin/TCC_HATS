@@ -4,13 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="537c6486-5a4a-4ca8-9b23-b31a0fe36431" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/hats_report_v2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-    </list>
+    <list default="true" id="537c6486-5a4a-4ca8-9b23-b31a0fe36431" name="Changes" comment="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -72,6 +66,71 @@
       <option name="presentableId" value="Default" />
       <updated>1776296425714</updated>
     </task>
+    <task id="LOCAL-00001" summary="Add hats_report_v2.py and project setup files&#10;&#10;Introduce the main script for processing HATS files, `hats_report_v2.py`, with support for parsing, reporting, and exporting data. Update project structure with configuration files, a README, and a .gitignore for clarity and organization.">
+      <option name="closed" value="true" />
+      <created>1776301002210</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1776301002210</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Add JSON report files for processed data on 2026-03-17 and 2026-03-18&#10;&#10;Added detailed JSON reports summarizing processed data, including file types, statistics, and sampled records for both dates. Created a summary.json file to group metadata and overall report information.">
+      <option name="closed" value="true" />
+      <created>1776332828402</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1776332828402</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Add JSON reports and update .gitignore&#10;&#10;Added JSON report files summarizing processed data for specified dates, including metadata and statistics. Updated `.gitignore` to exclude the `/Data/` directory for better project organization.">
+      <option name="closed" value="true" />
+      <created>1776362490157</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1776362490157</updated>
+    </task>
+    <task id="LOCAL-00004" summary="Add JSON reports and update .gitignore&#10;&#10;Added JSON report files summarizing processed data for specified dates, including metadata and statistics. Updated `.gitignore` to exclude the `/Data/` directory for better project organization.">
+      <option name="closed" value="true" />
+      <created>1776362776978</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1776362776978</updated>
+    </task>
+    <task id="LOCAL-00005" summary="Update README with project structure and usage instructions&#10;&#10;Added detailed project structure, usage steps, and clarification on handling HATS data files. This improves clarity for setting up and using the project.">
+      <option name="closed" value="true" />
+      <created>1776363477349</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1776363477349</updated>
+    </task>
+    <task id="LOCAL-00006" summary="Update README with project structure and usage instructions&#10;&#10;Added detailed project structure, usage steps, and clarification on handling HATS data files. This improves clarity for setting up and using the project.">
+      <option name="closed" value="true" />
+      <created>1776363492518</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1776363492518</updated>
+    </task>
+    <task id="LOCAL-00007" summary="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project.">
+      <option name="closed" value="true" />
+      <created>1776366161855</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1776366161855</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Add hats_report_v2.py and project setup files&#10;&#10;Introduce the main script for processing HATS files, `hats_report_v2.py`, with support for parsing, reporting, and exporting data. Update project structure with configuration files, a README, and a .gitignore for clarity and organization." />
+    <MESSAGE value="Add JSON report files for processed data on 2026-03-17 and 2026-03-18&#10;&#10;Added detailed JSON reports summarizing processed data, including file types, statistics, and sampled records for both dates. Created a summary.json file to group metadata and overall report information." />
+    <MESSAGE value="Add JSON reports and update .gitignore&#10;&#10;Added JSON report files summarizing processed data for specified dates, including metadata and statistics. Updated `.gitignore` to exclude the `/Data/` directory for better project organization." />
+    <MESSAGE value="Update README with project structure and usage instructions&#10;&#10;Added detailed project structure, usage steps, and clarification on handling HATS data files. This improves clarity for setting up and using the project." />
+    <MESSAGE value="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project." />
+    <option name="LAST_COMMIT_MESSAGE" value="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project." />
   </component>
 </project>
