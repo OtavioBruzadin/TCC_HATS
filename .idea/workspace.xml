@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="537c6486-5a4a-4ca8-9b23-b31a0fe36431" name="Changes" comment="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project." />
+    <list default="true" id="537c6486-5a4a-4ca8-9b23-b31a0fe36431" name="Changes" comment="Update README, .gitignore, and project structure details&#10;&#10;Improved README with usage instructions, project structure, and data handling steps. Updated `.gitignore` to exclude `Data/` and `Reports/` directories. Enhanced clarity and organization for project setup and usability.">
+      <change afterPath="$PROJECT_DIR$/hats_report_v3.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -37,17 +40,23 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "/Users/otaviobruzadin/PycharmProjects/Hats/TCC_HATS/Docs/Arquivos contextuais",
+    "git-widget-placeholder": "feat/refactor-using-hats-wiki",
+    "last_opened_file_path": "/Users/otaviobruzadin/PycharmProjects/Hats/TCC_HATS/Data/2026-03-18",
     "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
   }
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
-      <recent name="$PROJECT_DIR$/Docs/Arquivos contextuais" />
+      <recent name="$PROJECT_DIR$/Data/2026-03-18" />
+      <recent name="$PROJECT_DIR$/Data/2026-03-17" />
+      <recent name="$PROJECT_DIR$/Data/2026-03-18/aux" />
+      <recent name="$PROJECT_DIR$/Data/2026-03-17/aux" />
+      <recent name="$PROJECT_DIR$/Data/2026-03-19/aux" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/Data/2026-03-18/aux" />
+      <recent name="$PROJECT_DIR$/Data/2026-03-17/aux" />
     </key>
   </component>
   <component name="SharedIndexes">
@@ -122,7 +131,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776366161855</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="Update README, .gitignore, and project structure details&#10;&#10;Improved README with usage instructions, project structure, and data handling steps. Updated `.gitignore` to exclude `Data/` and `Reports/` directories. Enhanced clarity and organization for project setup and usability.">
+      <option name="closed" value="true" />
+      <created>1776366575642</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1776366575642</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -131,6 +148,7 @@
     <MESSAGE value="Add JSON reports and update .gitignore&#10;&#10;Added JSON report files summarizing processed data for specified dates, including metadata and statistics. Updated `.gitignore` to exclude the `/Data/` directory for better project organization." />
     <MESSAGE value="Update README with project structure and usage instructions&#10;&#10;Added detailed project structure, usage steps, and clarification on handling HATS data files. This improves clarity for setting up and using the project." />
     <MESSAGE value="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project." />
-    <option name="LAST_COMMIT_MESSAGE" value="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project." />
+    <MESSAGE value="Update README, .gitignore, and project structure details&#10;&#10;Improved README with usage instructions, project structure, and data handling steps. Updated `.gitignore` to exclude `Data/` and `Reports/` directories. Enhanced clarity and organization for project setup and usability." />
+    <option name="LAST_COMMIT_MESSAGE" value="Update README, .gitignore, and project structure details&#10;&#10;Improved README with usage instructions, project structure, and data handling steps. Updated `.gitignore` to exclude `Data/` and `Reports/` directories. Enhanced clarity and organization for project setup and usability." />
   </component>
 </project>
