@@ -55,10 +55,9 @@ def dt_from_husec(date_str: str, husec: int) -> str:
 
 
 def decode_ad7770_u32(value: int) -> int:
-    adcu = value & 0x00FFFFFF
-    negative = (value & 0x0800000) > 0
-    if negative:
-        adcu = adcu - 0x1000000
+    adcu = value & 0x00FFFFFF          # extrai os 24 bits menos significativos
+    if adcu & 0x00800000:              # bit 23 = bit de sinal do AD7770 (24-bit signed)
+        adcu -= 0x01000000             # complemento de 2: subtrai 2^24
     return adcu
 
 
