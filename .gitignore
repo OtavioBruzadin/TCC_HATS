@@ -1,3 +1,16 @@
-/Docs/
 /Data/
 /Reports/
+
+# O Docs/ guarda material de apoio não versionado, com uma exceção: o código
+# upstream do CRAAM, que é o baseline das comparações e precisa acompanhar o
+# repositório. Note que é /Docs/* e não /Docs/ — o git não entra num diretório
+# excluído, então a negação abaixo não teria efeito.
+/Docs/*
+!/Docs/upstream/
+/Docs/upstream/HATS_fft
+/Docs/upstream/HATS_readPos
+
+/.refvenv/
+/.venv/
+__pycache__/
+*.pyc
