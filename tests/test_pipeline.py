@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hats import backends, cli, constants, demodulation, pipeline, rbd, records, schema, timebase
+from hats import backends, cli, constants, demodulation, diagnostics, pipeline, rbd, records, schema, timebase
 from tests import fixtures
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -100,7 +100,8 @@ class TestDemodulation(TemporaryProject):
 
 class TestTables(TemporaryProject):
     def _run(self, *extra):
-        arguments = ["--project-root", str(self.tmp), "--output-dir", "Saida"] + list(extra)
+        arguments = ["--project-root", str(self.tmp), "--output-dir", "Saida",
+                     "--diagnostics-dir", "Diagnostico"] + list(extra)
         with open(os.devnull, "w") as sink:
             stdout, sys.stdout = sys.stdout, sink
             try:
@@ -127,11 +128,41 @@ class TestTables(TemporaryProject):
         self.assertTrue((out / "2026-03-17T1800-rbd_adcu.csv").read_text(encoding="utf-8")
                         .startswith("husec,jd,sid,elevation,azimuth,"))
 
-    def test_writes_nothing_of_its_own(self):
-        """Nada além das três tabelas da referência deve aparecer na saída."""
+    def test_output_folder_holds_only_the_reference_tables(self):
+        """
+        Nada além das três tabelas pode aparecer em Saida/: é o que torna a
+        comparação com a referência um `diff -r` limpo entre dois diretórios.
+        """
         out = self._run()
         self.assertEqual(sorted(path.name for path in out.iterdir()),
                          sorted(path.name for path in out.glob("*.csv")))
+
+    def test_diagnostics_go_to_their_own_folder(self):
+        self._run()
+        folder = self.tmp / "Diagnostico"
+        self.assertEqual(sorted(path.name for path in folder.glob("*.json")),
+                         ["2026-03-17-ws.json",
+                          "2026-03-17T1800-aux.json",
+                          "2026-03-17T1800-rbd.json"])
+
+    def test_diagnostics_report_what_the_reference_hides(self):
+        """Os descartados, os defasados e as unidades corrigidas."""
+        import json
+        self._run()
+        folder = self.tmp / "Diagnostico"
+
+        detector = json.loads((folder / "2026-03-17T1800-rbd.json").read_text(encoding="utf-8"))
+        self.assertIn("records_dropped_before_hour", detector)
+        self.assertIn("statistics_calibrated", detector)
+
+        pointing = json.loads((folder / "2026-03-17T1800-aux.json").read_text(encoding="utf-8"))
+        self.assertGreater(pointing["stale_records"], 0)
+        self.assertIsNotNone(pointing["stale_lag"])
+        self.assertEqual(pointing["unit_corrections"]["right_ascension"]["actual"], "hours")
+
+    def test_diagnostics_can_be_skipped(self):
+        self._run("--sem-diagnostico")
+        self.assertFalse(list((self.tmp / "Diagnostico").glob("*.json")))
 
     def test_timestamps_truncate_like_the_reference(self):
         self.assertEqual(str(timebase.craam_datetime("2026-03-17", 648000643)),

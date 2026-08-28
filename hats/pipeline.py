@@ -86,16 +86,22 @@ def write_pointing(destination, aux_path, schema, limit=None):
 
 def process_hour(destination_dir, rootname, rbd_path, rbd_schema,
                  aux_path, aux_schema, options, analyser):
-    """Processa uma hora e grava as tabelas. Devolve os arquivos escritos."""
+    """Processa uma hora e grava as tabelas.
+
+    Devolve (arquivos escritos, série demodulada, offset de leitura). Os dois
+    últimos existem para o diagnóstico não precisar refazer o mesmo trabalho.
+    """
     written = []
     deconv = None
+    offset = 0
 
     if rbd_path and rbd_path.exists():
         result = analyser(rbd_path, rbd_schema, options)
         deconv = result.get("deconv")
+        offset = result["offset"]
         written.append(write_calibrated(
             destination_dir / "{}-rbd_cal.csv".format(rootname),
-            rbd_path, rbd_schema, result["offset"], options["record_limit"]))
+            rbd_path, rbd_schema, offset, options["record_limit"]))
         if deconv and len(deconv[1]):
             written.append(write_deconvolved(
                 destination_dir / "{}-deconv.csv".format(rootname),
@@ -106,4 +112,4 @@ def process_hour(destination_dir, rootname, rbd_path, rbd_schema,
             destination_dir / "{}-rbd_adcu.csv".format(rootname),
             aux_path, aux_schema, options["record_limit"]))
 
-    return written, deconv
+    return written, deconv, offset

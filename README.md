@@ -18,7 +18,7 @@ relatórios. A organização é a deles.
 ```bash
 make run
 ```
-Roda o nosso. Grava em `Saida/`.
+Roda o nosso. Grava as tabelas em `Saida/` e os relatórios em `Diagnostico/`.
 
 ```bash
 make run-craam
@@ -36,13 +36,40 @@ Antes da primeira comparação, uma vez: `make setup-reference`.
 
 ## As tabelas
 
-As mesmas três que o `toCSV()` da referência grava:
+`Saida/` contém as mesmas três que o `toCSV()` da referência grava, e **nada
+além disso** — é o que torna a comparação um `diff -r` limpo entre dois
+diretórios.
 
 | arquivo | colunas |
 |---|---|
 | `-deconv.csv` | `time,husec,amplitude` |
 | `-rbd_cal.csv` | `golay,chopper,temp_hics,temp_env,temp_golay` |
 | `-rbd_adcu.csv` | o apontamento — ver abaixo |
+
+## Os diagnósticos
+
+`Diagnostico/` recebe relatórios JSON que a referência não produz. Eles ficam
+fora de `Saida/` de propósito: são uma leitura **sobre** os dados, não alteram
+tabela nenhuma, e se estivessem junto quebrariam o `diff`.
+
+| arquivo | o que traz |
+|---|---|
+| `-rbd.json` | estatística por canal, saltos em `sample` e `husec`, quantos registros a referência descartou, resumo da demodulação |
+| `-aux.json` | quantos registros de apontamento estão defasados e por quanto tempo, mais as unidades que o XML declara errado |
+| `-ws.json` | estação meteorológica: linhas rejeitadas e carimbos de tempo recuperados |
+
+Exemplo do que eles dizem sobre o arquivo de teste:
+
+```
+rbd : 441 registros lidos, 559 descartados antes da hora
+      saltos: sample=0 husec=0
+      demodulação: 9 janelas, média 124.195919 mV
+aux : 1000 registros, 234 defasados (23.4%), defasagem 1053.5 s
+ws  : 17253 linhas, 1 rejeitada, 2 carimbos recuperados
+```
+
+Custam uma passada a mais sobre o arquivo. `--sem-diagnostico` desliga, e aí só
+as tabelas são geradas.
 
 ## Desempenho
 

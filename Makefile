@@ -16,7 +16,7 @@ help:
 	@echo ""
 	@echo "  Uso: make <alvo>"
 	@echo ""
-	@echo "    make run                 roda o NOSSO      -> Saida/"
+	@echo "    make run                 roda o NOSSO      -> Saida/ + Diagnostico/"
 	@echo "    make run-craam           roda o do CRAAM   -> SaidaCRAAM/"
 	@echo "    make diff                roda os dois e compara as duas pastas"
 	@echo ""
@@ -60,7 +60,7 @@ craam-shell: check-reference
 	tools/craam_shell.sh $(DAY) $(HOUR)
 
 clean:
-	rm -rf Saida SaidaCRAAM
+	rm -rf Saida SaidaCRAAM Diagnostico
 
 setup-reference:
 	tools/setup_reference.sh

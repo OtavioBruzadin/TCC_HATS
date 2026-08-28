@@ -1,6 +1,7 @@
 /Data/
 /Saida/
 /SaidaCRAAM/
+/Diagnostico/
 
 # O Docs/ guarda material de apoio não versionado, com uma exceção: o código
 # upstream do CRAAM, que é o baseline das comparações e precisa acompanhar o

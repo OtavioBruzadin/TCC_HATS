@@ -30,12 +30,20 @@ AUX_UNIT_FIXES em hats/schema.py.
 """
 
 
-def ensure_structure(project_root, data_dir="Data", output_dir="Saida", xml_dir="XMLTables"):
-    """Cria as pastas do projeto se não existirem e devolve os caminhos."""
+def ensure_structure(project_root, data_dir="Data", output_dir="Saida",
+                     xml_dir="XMLTables", diagnostics_dir="Diagnostico"):
+    """
+    Cria as pastas do projeto se não existirem e devolve os caminhos.
+
+    A pasta de saída guarda só as tabelas da referência, para que a comparação
+    com ela seja um `diff -r` limpo entre dois diretórios. Os diagnósticos vão
+    para outra pasta justamente por isso.
+    """
     paths = {
         "project_root": project_root,
         "data_dir": project_root / data_dir,
         "output_dir": project_root / output_dir,
+        "diagnostics_dir": project_root / diagnostics_dir,
         "xml_dir": project_root / xml_dir,
     }
     for key, path in paths.items():
