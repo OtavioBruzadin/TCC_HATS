@@ -1,314 +1,140 @@
 """
-Análise do arquivo .rbd — o sinal do detector, amostrado a 1 kHz.
+Leitura e demodulação do arquivo .rbd — o sinal do detector, a 1 kHz.
 
-Uma passada só sobre o arquivo produz três coisas: estatística por canal,
-verificação de integridade da sequência, e a amplitude demodulada em 20 Hz.
+Uma passada sobre o arquivo produz a série demodulada. Nada além disso é
+calculado: estatística, verificação de integridade e qualquer outro diagnóstico
+ficariam fora da saída da referência, e o objetivo aqui é reproduzi-la.
 
-Há duas implementações com o mesmo resultado: `analyse_stdlib`, que só usa a
-biblioteca padrão, e `analyse_numpy`, escolhida quando numpy está disponível.
-Verificadas equivalentes sobre uma hora de dados — contagens e husec idênticos,
-amplitudes com erro relativo de 9e-16.
+Duas implementações com o mesmo resultado — `analyse_stdlib`, só com a biblioteca
+padrão, e `analyse_numpy`, escolhida quando numpy está disponível. Verificadas
+equivalentes bit a bit, o que é exigido por teste.
+
+Fidelidade
+----------
+Os registros anteriores à hora nominal são descartados, como o HATS.py faz. Isso
+importa mais do que parece: o descarte desloca o início da janela deslizante, e
+como 559 = 17x32 + 15 a defasagem não é múltipla do passo. Sem reproduzi-lo, as
+grades de janelas dos dois pipelines nunca coincidiriam.
 """
 
 import math
-import operator
 
-from hats import calibration, constants, demodulation, records, schema as schema_module, statistics, timebase
+from hats import calibration, constants, demodulation, records, schema as schema_module, timebase
 
 
-class IntegrityTracker(object):
+def _read_offset(path, schema):
     """
-    Conta descontinuidades na sequência de registros.
+    Quantos registros pular: os anteriores à hora nominal do arquivo.
 
-    `sample` deve andar de 1 em 1 e `husec` de 10 em 10, já que a aquisição é a
-    1 kHz. Também conta os registros anteriores à hora nominal do arquivo: o
-    HATS.py os descarta, aqui eles são mantidos e apenas contados.
+    Busca binária, válida porque o husec é monotônico nestes arquivos. Custa uns
+    poucos seeks em vez de uma passada.
     """
-
-    def __init__(self, hour_start_husec):
-        self.hour_start_husec = hour_start_husec
-        self.sample_leaps = 0
-        self.husec_leaps = 0
-        self.before_hour = 0
-        self.first_husec = None
-        self.last_husec = None
-        self._previous_sample = None
-        self._previous_husec = None
-
-    def feed_columns(self, sample_column, husec_column):
-        """Caminho stdlib: as reduções ficam em map/count, fora do interpretador."""
-        if husec_column:
-            if self.first_husec is None:
-                self.first_husec = husec_column[0]
-            self.last_husec = husec_column[-1]
-            if self.hour_start_husec is not None:
-                self.before_hour += sum(map(self.hour_start_husec.__gt__, husec_column))
-            deltas = list(map(operator.sub, husec_column[1:], husec_column))
-            self.husec_leaps += len(deltas) - deltas.count(constants.HUSEC_PER_SAMPLE)
-            if (self._previous_husec is not None
-                    and husec_column[0] - self._previous_husec != constants.HUSEC_PER_SAMPLE):
-                self.husec_leaps += 1
-            self._previous_husec = husec_column[-1]
-
-        if sample_column:
-            deltas = list(map(operator.sub, sample_column[1:], sample_column))
-            self.sample_leaps += len(deltas) - deltas.count(1)
-            if self._previous_sample is not None and sample_column[0] - self._previous_sample != 1:
-                self.sample_leaps += 1
-            self._previous_sample = sample_column[-1]
-
-    def feed_numpy(self, sample_column, husec_column):
-        """Caminho numpy: as mesmas contagens, vetorizadas."""
-        import numpy as np
-
-        if husec_column.size:
-            if self.first_husec is None:
-                self.first_husec = int(husec_column[0])
-            self.last_husec = int(husec_column[-1])
-            if self.hour_start_husec is not None:
-                self.before_hour += int(np.count_nonzero(husec_column < self.hour_start_husec))
-            if husec_column.size > 1:
-                deltas = np.diff(husec_column.astype(np.int64))
-                self.husec_leaps += int(np.count_nonzero(deltas != constants.HUSEC_PER_SAMPLE))
-            if (self._previous_husec is not None
-                    and int(husec_column[0]) - self._previous_husec != constants.HUSEC_PER_SAMPLE):
-                self.husec_leaps += 1
-            self._previous_husec = int(husec_column[-1])
-
-        if sample_column.size:
-            if sample_column.size > 1:
-                self.sample_leaps += int(np.count_nonzero(np.diff(sample_column.astype(np.int64)) != 1))
-            if self._previous_sample is not None and int(sample_column[0]) - self._previous_sample != 1:
-                self.sample_leaps += 1
-            self._previous_sample = int(sample_column[-1])
-
-    def report(self, dropped=0):
-        if dropped:
-            note = ("{} registros anteriores à hora nominal foram descartados, "
-                    "reproduzindo o comportamento do HATS.py.".format(dropped))
-        else:
-            note = ("O HATS.py descarta registros com husec < hora*36000000; "
-                    "aqui eles são mantidos e apenas contados.")
-        return {
-            "sample_number_leaps": self.sample_leaps,
-            "husec_leaps": self.husec_leaps,
-            "records_before_nominal_hour": self.before_hour,
-            "records_dropped_before_hour": dropped,
-            "note": note,
-        }
-
-
-def _read_offset(path, schema, options):
-    """
-    Quantos registros pular no início do arquivo.
-
-    Com `drop_before_hour`, reproduz o descarte do HATS.py: tudo com
-    husec < hora*36000000 fica de fora. Isso existe para permitir comparação
-    direta com o pipeline de referência — sem o mesmo descarte, as grades de
-    janelas da demodulação ficam defasadas e nenhuma janela cai no mesmo
-    instante nos dois. No arquivo T1800 de 2026-03-17 são 559 registros, e
-    559 = 17x32 + 15, ou seja a defasagem não é múltipla do passo.
-
-    Fora dessa comparação o descarte não se justifica: os registros têm
-    `sample` e `husec` contínuos, são dados bons.
-    """
-    if not options.get("drop_before_hour"):
+    hour = timebase.hour_from_filename(path)
+    if not (hour and hour[:2].isdigit()):
         return 0
-    threshold = _hour_start_husec(path)
-    if threshold is None:
-        return 0
+    threshold = int(hour[:2]) * constants.HUSEC_PER_HOUR
     return records.first_index_at_or_after(path, schema, "husec", threshold)
 
 
-def _hour_start_husec(path):
-    hour = timebase.hour_from_filename(path)
-    if hour and hour[:2].isdigit():
-        return int(hour[:2]) * constants.HUSEC_PER_HOUR
-    return None
-
-
-def _demodulation_report(options, husecs, amplitudes, golay_field, date_str, method):
-    window_size = options["window_size"]
-    used_bin = demodulation.frequency_bin(options["target_frequency"], window_size,
-                                          options["sampling_frequency"], options["bin_mode"])
-    return {
-        "method": method,
-        "target_frequency_hz": options["target_frequency"],
-        "sampling_frequency_hz": options["sampling_frequency"],
-        "window_size": window_size,
-        "steps": options["steps"],
-        "output_rate_hz": options["sampling_frequency"] / options["steps"],
-        "bin_mode": options["bin_mode"],
-        "bin_exact": options["target_frequency"] * window_size / options["sampling_frequency"],
-        "bin_used": used_bin,
-        "bin_frequency_hz": used_bin * options["sampling_frequency"] / window_size,
-        "goertzel_c_legacy": bool(options.get("goertzel_c_legacy", False)),
-        "windows": len(amplitudes),
-        "unit": golay_field.get("converted_unit") if golay_field else None,
-        "amplitude": statistics.summarize(amplitudes),
-        "first_time_utc": timebase.datetime_from_husec(date_str, husecs[0]),
-        "last_time_utc": timebase.datetime_from_husec(date_str, husecs[-1]),
-    }
-
-
-def _assemble(schema, accumulators, tracker, total, date_str, dropped=0):
-    fields = schema_module.converted_fields(schema)
-    result = {
-        "total_records": total,
-        "first_time_utc": (timebase.datetime_from_husec(date_str, tracker.first_husec)
-                           if tracker.first_husec is not None else None),
-        "last_time_utc": (timebase.datetime_from_husec(date_str, tracker.last_husec)
-                          if tracker.last_husec is not None else None),
-        "integrity": tracker.report(dropped),
-        "statistics_adcu": {},
-        "statistics_calibrated": {},
-        "units_calibrated": {f["name"]: f.get("converted_unit") for f in fields},
-    }
-    for field in fields:
-        name = field["name"]
-        result["statistics_adcu"][name] = accumulators[name].summary()
-        if field.get("convert") == "yes":
-            result["statistics_calibrated"][name] = calibration.scale_summary(
-                result["statistics_adcu"][name], field.get("slope", 1.0), field.get("offset", 0.0))
-    return result
+def _plan(path, schema, options):
+    """Offset de leitura, total de amostras e número de janelas."""
+    offset = _read_offset(path, schema)
+    total = max(0, records.total_records(path, schema, options["record_limit"]) - offset)
+    windows = demodulation.window_count(total, options["window_size"], options["steps"])
+    return offset, total, windows
 
 
 def analyse_stdlib(path, schema, options):
-    """Análise completa usando apenas a biblioteca padrão."""
-    date_str = timebase.date_from_filename(path)
+    """Demodulação usando apenas a biblioteca padrão."""
+    offset, _total, windows = _plan(path, schema, options)
     index_of = schema_module.field_index(schema)
-    fields = schema_module.converted_fields(schema)
-    accumulators = {f["name"]: statistics.Accumulator() for f in fields}
-    tracker = IntegrityTracker(_hour_start_husec(path))
+    golay = next((f for f in schema["fields"] if f["name"] == "golay"), None)
 
-    golay_field = next((f for f in schema["fields"] if f["name"] == "golay"), None)
-    dropped = _read_offset(path, schema, options)
-    count = max(0, records.total_records(path, schema, options["record_limit"]) - dropped)
-    demodulator = None
-    if options["demodulate"] and golay_field is not None and "husec" in index_of:
-        windows = demodulation.window_count(count, options["window_size"], options["steps"])
-        if windows:
-            demodulator = demodulation.SlidingDemodulator(
-                options["window_size"], options["steps"], options["target_frequency"],
-                options["sampling_frequency"], options["bin_mode"], windows,
-                options.get("goertzel_c_legacy", False))
+    if not (options["demodulate"] and golay and "husec" in index_of and windows):
+        return {"offset": offset, "deconv": None}
 
-    total = 0
-    for columns, chunk_count in records.iter_columns(path, schema, options["record_limit"], offset=dropped):
-        total += chunk_count
-        tracker.feed_columns(columns[index_of["sample"]] if "sample" in index_of else (),
-                             columns[index_of["husec"]] if "husec" in index_of else ())
+    demodulator = demodulation.SlidingDemodulator(
+        options["window_size"], options["steps"], options["target_frequency"],
+        options["sampling_frequency"], options["bin_mode"], windows)
 
-        for field in fields:
-            column = columns[index_of[field["name"]]]
-            if field.get("origin") == "ad7770":
-                column = calibration.decode_column(column)
-            accumulators[field["name"]].add_column(column)
+    slope = golay.get("slope", 1.0)
+    intercept = golay.get("offset", 0.0)
+    seen = 0
+    for columns, count in records.iter_columns(path, schema, options["record_limit"], offset=offset):
+        seen += count
+        column = columns[index_of["golay"]]
+        if golay.get("origin") == "ad7770":
+            column = calibration.decode_column(column)
+        demodulator.feed([v * slope + intercept for v in column],
+                         columns[index_of["husec"]], seen)
 
-            if demodulator is not None and field is golay_field:
-                slope = field.get("slope", 1.0)
-                offset = field.get("offset", 0.0)
-                demodulator.feed([v * slope + offset for v in column],
-                                 columns[index_of["husec"]], total)
-
-    result = _assemble(schema, accumulators, tracker, total, date_str, dropped)
-    if demodulator is not None and demodulator.amplitudes:
-        result["demodulation"] = _demodulation_report(
-            options, demodulator.husecs, demodulator.amplitudes, golay_field, date_str,
-            "flattop_single_bin_dft")
-        result["_deconv"] = (demodulator.husecs, demodulator.amplitudes, date_str)
-    return result
+    return {"offset": offset, "deconv": (demodulator.husecs, demodulator.amplitudes)}
 
 
 def analyse_numpy(path, schema, options):
-    """Mesma análise, vetorizada. Escolhida automaticamente quando numpy existe."""
+    """Mesma demodulação, vetorizada."""
     import numpy as np
     from numpy.lib.stride_tricks import sliding_window_view
 
-    date_str = timebase.date_from_filename(path)
-    fields = schema_module.converted_fields(schema)
-    accumulators = {f["name"]: statistics.Accumulator() for f in fields}
-    tracker = IntegrityTracker(_hour_start_husec(path))
+    offset, _total, windows = _plan(path, schema, options)
     dtype_names = schema_module.numpy_dtype(schema).names
+    golay = next((f for f in schema["fields"] if f["name"] == "golay"), None)
 
-    golay_field = next((f for f in schema["fields"] if f["name"] == "golay"), None)
-    dropped = _read_offset(path, schema, options)
-    count = max(0, records.total_records(path, schema, options["record_limit"]) - dropped)
+    if not (options["demodulate"] and golay and "husec" in dtype_names and windows):
+        return {"offset": offset, "deconv": None}
+
     window_size = options["window_size"]
     steps = options["steps"]
+    half = window_size // 2
+    window = demodulation.flattop_window(window_size)
+    coefficient = 2.0 * math.cos(2.0 * math.pi * demodulation.frequency_bin(
+        options["target_frequency"], window_size,
+        options["sampling_frequency"], options["bin_mode"]) / window_size)
 
-    demodulating = options["demodulate"] and golay_field is not None and "husec" in dtype_names
-    max_windows = demodulation.window_count(count, window_size, steps) if demodulating else 0
-    demodulating = demodulating and max_windows > 0
+    amplitude_blocks = []
+    husec_blocks = []
+    carry_signal = np.empty(0, dtype=np.float64)
+    carry_husec = np.empty(0, dtype=np.uint64)
+    consumed = 0
+    next_start = 0
+    emitted = 0
+    seen = 0
 
-    c_legacy = bool(options.get("goertzel_c_legacy", False))
-    if demodulating:
-        projection = demodulation.numpy_projection(
-            window_size, options["target_frequency"], options["sampling_frequency"],
-            options["bin_mode"], c_legacy)
-        if c_legacy:
-            legacy_window = demodulation.flattop_window(window_size)
-            legacy_coefficient = 2.0 * math.cos(2.0 * math.pi * demodulation.frequency_bin(
-                options["target_frequency"], window_size,
-                options["sampling_frequency"], options["bin_mode"]) / window_size)
-        half = window_size // 2
-        amplitude_blocks = []
-        husec_blocks = []
-        carry_signal = np.empty(0, dtype=np.float64)
-        carry_husec = np.empty(0, dtype=np.uint64)
-        consumed = 0
-        next_start = 0
-        emitted = 0
+    for block in records.iter_numpy_blocks(path, schema, options["record_limit"], offset=offset):
+        seen += block.size
+        column = block["golay"]
+        if golay.get("origin") == "ad7770":
+            column = calibration.numpy_decode_column(column)
+        calibrated = column.astype(np.float64) * golay.get("slope", 1.0) + golay.get("offset", 0.0)
+        carry_signal = np.concatenate((carry_signal, calibrated))
+        carry_husec = np.concatenate((carry_husec, block["husec"].astype(np.uint64)))
 
-    total = 0
-    for block in records.iter_numpy_blocks(path, schema, options["record_limit"], offset=dropped):
-        total += block.size
-        tracker.feed_numpy(block["sample"] if "sample" in dtype_names else np.empty(0),
-                           block["husec"] if "husec" in dtype_names else np.empty(0))
+        if carry_signal.size < window_size:
+            continue
 
-        for field in fields:
-            column = block[field["name"]]
-            if field.get("origin") == "ad7770":
-                column = calibration.numpy_decode_column(column)
-            as_float = column.astype(np.float64)
-            accumulators[field["name"]].add_partial(
-                block.size, float(as_float.min()), float(as_float.max()),
-                float(as_float.sum()), float(np.dot(as_float, as_float)))
+        last_start = seen - window_size
+        if next_start <= last_start:
+            available = min((last_start - next_start) // steps + 1, windows - emitted)
+            if available > 0:
+                local = next_start - consumed
+                span = (available - 1) * steps + window_size
+                views = sliding_window_view(carry_signal[local:local + span], window_size)[::steps]
+                amplitude_blocks.append(demodulation.numpy_amplitudes(
+                    views, window, coefficient, window_size) / window_size)
+                husec_blocks.append(carry_husec[local + half + steps * np.arange(available)])
+                next_start += available * steps
+                emitted += available
+        if next_start > consumed:
+            drop = next_start - consumed
+            carry_signal = carry_signal[drop:]
+            carry_husec = carry_husec[drop:]
+            consumed = next_start
 
-            if demodulating and field is golay_field:
-                calibrated = as_float * field.get("slope", 1.0) + field.get("offset", 0.0)
-                carry_signal = np.concatenate((carry_signal, calibrated))
-                carry_husec = np.concatenate((carry_husec, block["husec"].astype(np.uint64)))
+    if not amplitude_blocks:
+        return {"offset": offset, "deconv": None}
 
-        if demodulating and carry_signal.size >= window_size:
-            # Todas as janelas já completas de uma vez: uma multiplicação
-            # matriz-vetor em BLAS no lugar de um laço por janela.
-            last_start = total - window_size
-            if next_start <= last_start:
-                available = min((last_start - next_start) // steps + 1, max_windows - emitted)
-                if available > 0:
-                    local = next_start - consumed
-                    span = (available - 1) * steps + window_size
-                    views = sliding_window_view(carry_signal[local:local + span], window_size)[::steps]
-                    if c_legacy:
-                        amplitude_blocks.append(demodulation.numpy_amplitudes_c_legacy(
-                            views, legacy_window, legacy_coefficient, window_size) / window_size)
-                    else:
-                        amplitude_blocks.append(np.abs(views @ projection) / window_size)
-                    husec_blocks.append(carry_husec[local + half + steps * np.arange(available)])
-                    next_start += available * steps
-                    emitted += available
-            if next_start > consumed:
-                drop = next_start - consumed
-                carry_signal = carry_signal[drop:]
-                carry_husec = carry_husec[drop:]
-                consumed = next_start
-
-    result = _assemble(schema, accumulators, tracker, total, date_str, dropped)
-    if demodulating and amplitude_blocks:
-        amplitudes = np.concatenate(amplitude_blocks).tolist()
-        husecs = [int(value) for value in np.concatenate(husec_blocks)]
-        result["demodulation"] = _demodulation_report(
-            options, husecs, amplitudes, golay_field, date_str, "flattop_single_bin_dft_numpy")
-        result["_deconv"] = (husecs, amplitudes, date_str)
-    return result
+    return {
+        "offset": offset,
+        "deconv": ([int(v) for v in np.concatenate(husec_blocks)],
+                   np.concatenate(amplitude_blocks).tolist()),
+    }

@@ -23,11 +23,10 @@ Divergências conhecidas em relação ao código C
 """
 
 import math
-import operator
 
 from hats import constants
 
-C_LEGACY_NOTE = (
+REFERENCE_NOTE = (
     "Reproduz o encerramento antecipado da recursão de Goertzel no "
     "windowed_dft.c do CRAAM, que devolve s[N-2] e s[N-3] no lugar de s[N-1] e "
     "s[N-2]. Isso equivale a somar apenas as N-1 primeiras amostras da janela, "
@@ -74,48 +73,6 @@ def frequency_bin(target_frequency, window_size, sampling_frequency, bin_mode):
     return float(math.floor(exact))
 
 
-def projection_vectors(window_size, target_frequency, sampling_frequency, bin_mode,
-                       c_legacy=False):
-    """
-    Janela flat-top já multiplicada pelos twiddles de análise.
-
-    Deixa a amplitude de cada janela como dois produtos internos, que
-    `sum(map(mul, ...))` avalia em C em vez de no interpretador. Cerca de três
-    vezes mais rápido que a recursão, com concordância de 3e-14.
-
-    Com `c_legacy`, o último coeficiente é zerado. Ver C_LEGACY_NOTE.
-    """
-    window = flattop_window(window_size)
-    angle = 2.0 * math.pi * frequency_bin(
-        target_frequency, window_size, sampling_frequency, bin_mode) / window_size
-    cosines = [window[i] * math.cos(angle * i) for i in range(window_size)]
-    sines = [window[i] * math.sin(angle * i) for i in range(window_size)]
-    if c_legacy and window_size:
-        cosines[-1] = 0.0
-        sines[-1] = 0.0
-    return cosines, sines
-
-
-def numpy_projection(window_size, target_frequency, sampling_frequency, bin_mode,
-                     c_legacy=False):
-    """Mesma projeção, como vetor complexo, para a multiplicação matriz-vetor."""
-    import numpy as np
-
-    indices = np.arange(window_size, dtype=np.float64)
-    denominator = float(window_size - 1) if window_size > 1 else 1.0
-    window = constants.FLATTOP_CORRECTION * (
-        1.0
-        - 1.9330 * np.cos(2.0 * np.pi * indices / denominator)
-        + 1.2860 * np.cos(4.0 * np.pi * indices / denominator)
-        - 0.3880 * np.cos(6.0 * np.pi * indices / denominator)
-        + 0.0322 * np.cos(8.0 * np.pi * indices / denominator))
-    k = frequency_bin(target_frequency, window_size, sampling_frequency, bin_mode)
-    projection = window * np.exp(-1j * 2.0 * np.pi * k * indices / window_size)
-    if c_legacy and window_size:
-        projection[-1] = 0.0
-    return projection
-
-
 def window_count(total_samples, window_size, steps):
     """
     Quantas janelas o HATS_fft.c produziria: floor((N - janela + 1) / passo).
@@ -145,13 +102,13 @@ def goertzel_amplitude(signal, offset, window, coefficient, window_size):
                          - coefficient * current * previous))
 
 
-def goertzel_amplitude_c_legacy(signal, offset, window, coefficient, window_size):
+def goertzel_amplitude_reference(signal, offset, window, coefficient, window_size):
     """
     Porte fiel da recursão do windowed_dft.c, incluindo o encerramento antecipado.
 
     A ordem das operações é a mesma do C, o que importa: o produto interno
     equivalente dá o mesmo número em precisão infinita, mas arredonda diferente e
-    diverge no décimo terceiro dígito. Ver C_LEGACY_NOTE.
+    diverge no décimo terceiro dígito. Ver REFERENCE_NOTE.
     """
     state = [0.0, window[0] * signal[offset], 0.0]
     for index in range(1, window_size):
@@ -163,7 +120,7 @@ def goertzel_amplitude_c_legacy(signal, offset, window, coefficient, window_size
     return math.sqrt(last * last + previous * previous - coefficient * last * previous)
 
 
-def numpy_amplitudes_c_legacy(views, window, coefficient, window_size):
+def numpy_amplitudes(views, window, coefficient, window_size):
     """
     Recursão do windowed_dft.c avaliada em todas as janelas ao mesmo tempo.
 
@@ -198,18 +155,14 @@ class SlidingDemodulator(object):
     """
 
     def __init__(self, window_size, steps, target_frequency, sampling_frequency,
-                 bin_mode, max_windows, c_legacy=False):
+                 bin_mode, max_windows):
         self.window_size = window_size
         self.steps = steps
         self.half = window_size // 2
         self.max_windows = max_windows
-        self.c_legacy = c_legacy
-        self.cosines, self.sines = projection_vectors(
-            window_size, target_frequency, sampling_frequency, bin_mode, c_legacy)
-        if c_legacy:
-            self.window = flattop_window(window_size)
-            self.coefficient = 2.0 * math.cos(2.0 * math.pi * frequency_bin(
-                target_frequency, window_size, sampling_frequency, bin_mode) / window_size)
+        self.window = flattop_window(window_size)
+        self.coefficient = 2.0 * math.cos(2.0 * math.pi * frequency_bin(
+            target_frequency, window_size, sampling_frequency, bin_mode) / window_size)
         self.amplitudes = []
         self.husecs = []
         self._signal = []
@@ -222,22 +175,13 @@ class SlidingDemodulator(object):
         self._signal.extend(signal_block)
         self._husec.extend(husec_block)
 
-        multiply = operator.mul
-        hypot = math.hypot
-        cosines = self.cosines
-        sines = self.sines
         window_size = self.window_size
         last_start = total_samples_read - window_size
 
         while len(self.amplitudes) < self.max_windows and self._next_start <= last_start:
             local = self._next_start - self._consumed
-            if self.c_legacy:
-                self.amplitudes.append(goertzel_amplitude_c_legacy(
-                    self._signal, local, self.window, self.coefficient, window_size) / window_size)
-            else:
-                piece = self._signal[local:local + window_size]
-                self.amplitudes.append(hypot(sum(map(multiply, cosines, piece)),
-                                             sum(map(multiply, sines, piece))) / window_size)
+            self.amplitudes.append(goertzel_amplitude_reference(
+                self._signal, local, self.window, self.coefficient, window_size) / window_size)
             self.husecs.append(self._husec[local + self.half])
             self._next_start += self.steps
 
@@ -251,7 +195,7 @@ class SlidingDemodulator(object):
 def demodulate(signal, husec, window_size=constants.WINDOW_SIZE, steps=constants.STEPS,
                target_frequency=constants.TARGET_FREQUENCY,
                sampling_frequency=constants.SAMPLING_FREQUENCY,
-               bin_mode="reference", c_legacy=False):
+               bin_mode="reference"):
     """
     Demodula uma série já inteira em memória.
 
@@ -264,28 +208,18 @@ def demodulate(signal, husec, window_size=constants.WINDOW_SIZE, steps=constants
     if not count:
         return [], []
 
-    cosines, sines = projection_vectors(window_size, target_frequency,
-                                        sampling_frequency, bin_mode, c_legacy)
-    multiply = operator.mul
-    hypot = math.hypot
     half = window_size // 2
     samples = signal if isinstance(signal, list) else list(signal)
 
-    if c_legacy:
-        window = flattop_window(window_size)
-        coefficient = 2.0 * math.cos(2.0 * math.pi * frequency_bin(
-            target_frequency, window_size, sampling_frequency, bin_mode) / window_size)
+    window = flattop_window(window_size)
+    coefficient = 2.0 * math.cos(2.0 * math.pi * frequency_bin(
+        target_frequency, window_size, sampling_frequency, bin_mode) / window_size)
 
     amplitudes = []
     husecs = []
     for index in range(count):
         offset = index * steps
-        if c_legacy:
-            amplitudes.append(goertzel_amplitude_c_legacy(
-                samples, offset, window, coefficient, window_size) / window_size)
-        else:
-            piece = samples[offset:offset + window_size]
-            amplitudes.append(hypot(sum(map(multiply, cosines, piece)),
-                                    sum(map(multiply, sines, piece))) / window_size)
+        amplitudes.append(goertzel_amplitude_reference(
+            samples, offset, window, coefficient, window_size) / window_size)
         husecs.append(husec[offset + half])
     return husecs, amplitudes

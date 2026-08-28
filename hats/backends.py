@@ -13,7 +13,7 @@ Medido numa hora de dados (3,6 milhões de registros):
     backend numpy                           0,14 s     128 MB
 """
 
-from hats import exporters, rbd
+from hats import rbd
 
 
 def numpy_available():
@@ -26,20 +26,20 @@ def numpy_available():
 
 def resolve(requested="auto"):
     """
-    Devolve (nome, analisador, exportador do rbd).
+    Devolve (nome, analisador).
 
     'auto' prefere numpy quando ele existe; 'numpy' falha se não existir;
     'stdlib' força a biblioteca padrão.
     """
     if requested == "stdlib":
-        return "stdlib", rbd.analyse_stdlib, exporters.export_rbd_csv
+        return "stdlib", rbd.analyse_stdlib
     if requested == "numpy":
         if not numpy_available():
             raise SystemExit("Backend 'numpy' pedido, mas numpy não está instalado.")
-        return "numpy", rbd.analyse_numpy, exporters.export_rbd_csv_numpy
+        return "numpy", rbd.analyse_numpy
     if numpy_available():
-        return "numpy", rbd.analyse_numpy, exporters.export_rbd_csv_numpy
-    return "stdlib", rbd.analyse_stdlib, exporters.export_rbd_csv
+        return "numpy", rbd.analyse_numpy
+    return "stdlib", rbd.analyse_stdlib
 
 
 def describe():

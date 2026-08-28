@@ -1,11 +1,15 @@
 """
-Testes de ponta a ponta: leitura dos binários, análise, e a CLI inteira.
+Testes de ponta a ponta.
 
-Cada teste monta seus próprios arquivos num diretório temporário, então a suíte
-não depende dos dados reais nem do download do Drive.
+Cada teste monta os binários de que precisa num diretório temporário, então a
+suíte não depende dos dados reais nem do download do Drive.
+
+A igualdade byte a byte contra o HATS.py real é verificada por `make diff`, que
+precisa do ambiente de referência. Aqui fica travado o que dá para travar sem
+ele: o layout das tabelas, o truncamento dos carimbos de tempo e a equivalência
+entre os dois backends.
 """
 
-import json
 import os
 import shutil
 import sys
@@ -15,24 +19,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hats import backends, cli, pointing, rbd, records, schema, weather
+from hats import backends, cli, constants, demodulation, pipeline, rbd, records, schema, timebase
 from tests import fixtures
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 XML_DIR = PROJECT_ROOT / "XMLTables"
 
-def options_for(**extra):
-    """Opções de análise. O pipeline sempre reproduz a referência."""
-    values = {
-        "demodulate": True, "window_size": 128, "steps": 32, "target_frequency": 20.0,
-        "sampling_frequency": 1000.0, "bin_mode": "reference", "record_limit": None,
-        "drop_before_hour": True, "goertzel_c_legacy": True,
-    }
-    values.update(extra)
-    return values
-
-
-DEFAULT_OPTIONS = options_for()
+OPTIONS = {
+    "demodulate": True, "window_size": 128, "steps": 32, "target_frequency": 20.0,
+    "sampling_frequency": 1000.0, "bin_mode": "reference", "record_limit": None,
+}
 
 
 def numpy_installed():
@@ -63,238 +59,94 @@ class TestRecords(TemporaryProject):
             records.total_records(broken, self.rbd_schema)
         self.assertIn("não é múltiplo", str(caught.exception))
 
-    def test_columns_and_records_agree(self):
-        by_record = list(records.iter_records(self.paths["rbd"], self.rbd_schema))
-        columns = []
-        for block, _count in records.iter_columns(self.paths["rbd"], self.rbd_schema):
-            if not columns:
-                columns = [list(column) for column in block]
-            else:
-                for index, column in enumerate(block):
-                    columns[index].extend(column)
-        self.assertEqual(len(by_record), len(columns[0]))
-        self.assertEqual(tuple(columns[index][7] for index in range(len(columns))), by_record[7])
+    def test_binary_search_finds_the_first_record_of_the_hour(self):
+        path = self.paths["day_dir"] / "hats-2026-03-17T1800.rbd"
+        fixtures.write_rbd(path, samples=1000, start_husec=18 * 36000000 - 5000)
+        index = records.first_index_at_or_after(path, self.rbd_schema, "husec", 18 * 36000000)
+        self.assertEqual(index, 500)
 
     def test_record_limit_is_honoured(self):
         self.assertEqual(len(list(records.iter_records(self.paths["rbd"], self.rbd_schema, limit=50))), 50)
 
 
-class TestRbdAnalysis(TemporaryProject):
+class TestDemodulation(TemporaryProject):
     def test_recovers_the_injected_amplitude(self):
-        result = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(DEFAULT_OPTIONS))
-        self.assertEqual(result["total_records"], self.paths["samples"])
-        self.assertAlmostEqual(result["demodulation"]["amplitude"]["mean"], 99.018, places=2)
+        result = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(OPTIONS))
+        _husecs, amplitudes = result["deconv"]
+        self.assertAlmostEqual(sum(amplitudes) / len(amplitudes), 99.018, places=2)
 
-    def test_window_count_follows_the_c_formula(self):
-        result = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(DEFAULT_OPTIONS))
-        expected = (self.paths["samples"] - 128 + 1) // 32
-        self.assertEqual(result["demodulation"]["windows"], expected)
-
-    def test_integrity_sees_a_clean_sequence(self):
-        result = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(DEFAULT_OPTIONS))
-        self.assertEqual(result["integrity"]["sample_number_leaps"], 0)
-        self.assertEqual(result["integrity"]["husec_leaps"], 0)
-
-    @unittest.skipUnless(numpy_installed(), "numpy não instalado")
-    def test_craam_mode_is_bit_identical_across_backends(self):
-        """
-        No modo craam a igualdade bit a bit é o produto; se os dois backends
-        divergirem em um único bit, a reprodução da referência deixa de valer.
-        """
-        options = options_for()
-        plain = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(options))
-        fast = rbd.analyse_numpy(self.paths["rbd"], self.rbd_schema, dict(options))
-        _, plain_amplitude, _ = plain["_deconv"]
-        _, fast_amplitude, _ = fast["_deconv"]
-        self.assertEqual(len(plain_amplitude), len(fast_amplitude))
-        for index, (one, other) in enumerate(zip(plain_amplitude, fast_amplitude)):
-            self.assertEqual(one, other, msg="janela {}".format(index))
-
-    def test_reproduces_the_reference_behaviour(self):
-        """Descarta os pré-hora e replica o defeito, como o HATS.py."""
+    def test_drops_records_before_the_nominal_hour_like_the_reference(self):
         path = self.paths["day_dir"] / "hats-2026-03-17T1800.rbd"
         fixtures.write_rbd(path, samples=1000, start_husec=18 * 36000000 - 5000)
-        result = rbd.analyse_stdlib(path, self.rbd_schema, dict(DEFAULT_OPTIONS))
-        self.assertEqual(result["integrity"]["records_dropped_before_hour"], 500)
-        self.assertEqual(result["total_records"], 500)
-        self.assertTrue(result["demodulation"]["goertzel_c_legacy"])
+        result = rbd.analyse_stdlib(path, self.rbd_schema, dict(OPTIONS))
+        self.assertEqual(result["offset"], 500)
+        # 500 amostras restantes -> floor((500-128+1)/32) janelas
+        self.assertEqual(len(result["deconv"][1]), (500 - 128 + 1) // 32)
 
     def test_no_demod_option(self):
-        options = dict(DEFAULT_OPTIONS, demodulate=False)
-        result = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, options)
-        self.assertNotIn("demodulation", result)
+        result = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(OPTIONS, demodulate=False))
+        self.assertIsNone(result["deconv"])
 
     @unittest.skipUnless(numpy_installed(), "numpy não instalado")
-    def test_numpy_backend_agrees_with_stdlib(self):
-        plain = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(DEFAULT_OPTIONS))
-        fast = rbd.analyse_numpy(self.paths["rbd"], self.rbd_schema, dict(DEFAULT_OPTIONS))
-
-        self.assertEqual(plain["total_records"], fast["total_records"])
-        self.assertEqual(plain["integrity"], fast["integrity"])
-        self.assertEqual(plain["demodulation"]["windows"], fast["demodulation"]["windows"])
-
-        plain_husec, plain_amplitude, _ = plain["_deconv"]
-        fast_husec, fast_amplitude, _ = fast["_deconv"]
-        self.assertEqual([int(v) for v in plain_husec], [int(v) for v in fast_husec])
-        for one, other in zip(plain_amplitude, fast_amplitude):
-            self.assertAlmostEqual(one, other, places=10)
-
-        for channel, summary in plain["statistics_calibrated"].items():
-            for key in ("min", "max", "mean"):
-                self.assertAlmostEqual(summary[key], fast["statistics_calibrated"][channel][key],
-                                       places=6, msg="{}.{}".format(channel, key))
+    def test_backends_agree_bit_for_bit(self):
+        """A igualdade bit a bit é o produto; um bit divergente já invalida."""
+        plain = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(OPTIONS))
+        fast = rbd.analyse_numpy(self.paths["rbd"], self.rbd_schema, dict(OPTIONS))
+        self.assertEqual(plain["offset"], fast["offset"])
+        self.assertEqual(plain["deconv"][0], fast["deconv"][0])
+        for index, (one, other) in enumerate(zip(plain["deconv"][1], fast["deconv"][1])):
+            self.assertEqual(one, other, msg="janela {}".format(index))
 
 
-class TestPointing(TemporaryProject):
-    def test_separates_stale_records(self):
-        result = pointing.analyse(self.paths["aux"], self.aux_schema, dict(DEFAULT_OPTIONS))
-        self.assertEqual(result["total_records"], self.paths["aux_records"])
-        self.assertEqual(result["stale_records"], self.paths["aux_stale"])
-        self.assertEqual(result["valid_records"],
-                         self.paths["aux_records"] - self.paths["aux_stale"])
-
-    def test_scan_flags_live_in_the_stale_set(self):
-        # É o padrão dos dados reais, e o motivo de o filtro importar.
-        result = pointing.analyse(self.paths["aux"], self.aux_schema, dict(DEFAULT_OPTIONS))
-        self.assertEqual(result["opmode_counts_valid"].get("7", 0), 0)
-        self.assertGreater(result["opmode_counts_stale"].get("7", 0), 0)
-
-    def test_measures_the_stale_lag(self):
-        result = pointing.analyse(self.paths["aux"], self.aux_schema, dict(DEFAULT_OPTIONS))
-        lag = result["stale_lag"]
-        self.assertIsNotNone(lag)
-        # A fixture defasa 1000 posições de 1,05 s cada, ou seja ~1053 s — a
-        # mesma ordem da defasagem real medida nos dados de 2026-03.
-        self.assertAlmostEqual(lag["mean_seconds"], 1052.8, delta=2.0)
-        # e a dispersão tem de ser desprezível, como no dado real
-        self.assertLess(lag["sd_seconds"], 0.1)
-
-    def test_record_with_zero_julian_date_is_invalid(self):
-        self.assertFalse(pointing.is_valid(records.Record({"jd": 0.0})))
-        self.assertTrue(pointing.is_valid(records.Record({"jd": 2461117.25})))
-
-    def test_pointing_valid_requires_julian_date(self):
-        # Antes, um registro defasado passava como válido porque azimute e
-        # elevação não são zero — são apenas antigos.
-        stale = records.Record({"jd": 0.0, "azimuth": 331.4, "elevation": 56.0,
-                                "right_ascension": 23.8, "declination": -1.1})
-        self.assertFalse(pointing.state(stale)["pointing_valid"])
-        self.assertFalse(pointing.state(stale)["pointing_zeroed"])
-
-    def test_unit_correction(self):
-        record = records.Record({"right_ascension": 23.826896641213743,
-                                 "ra_rate": 0.0375385, "dec_rate": 0.0164809})
-        corrected = pointing.corrected_values(record)
-        self.assertAlmostEqual(corrected["right_ascension_deg"], 357.4034, places=3)
-        self.assertAlmostEqual(corrected["ra_rate_deg_s"], 0.0375385 / 3600.0, places=12)
-
-
-class TestWeather(TemporaryProject):
-    def test_repairs_control_character_and_rejects_garbage(self):
-        rows, rejected, repaired = weather.read(self.paths["ws"])
-        self.assertEqual(rejected, 1)
-        self.assertEqual(repaired, 1)
-        for row in rows:
-            self.assertFalse(row["time"].startswith("\x7f"))
-
-    def test_parses_pressure_with_either_suffix(self):
-        short = weather.parse_line("2026-03-17T00:00:00,0R2,Ta=18.4C,Ua=9.0P,Pa=757.5H")
-        long = weather.parse_line("2026-03-17T00:00:00,0R2,Ta=18.4C,Ua=9.0P,Pa=757.5HPa")
-        self.assertEqual(short["pressure_hpa"], 757.5)
-        self.assertEqual(long["pressure_hpa"], 757.5)
-
-    def test_rejects_line_with_wrong_field_count(self):
-        self.assertIsNone(weather.parse_line("2026-03-17T00:00:00,0R2,Ta=18.4C"))
-
-
-class TestCommandLine(TemporaryProject):
+class TestTables(TemporaryProject):
     def _run(self, *extra):
-        arguments = ["--project-root", str(self.tmp), "--reports-dir", "Reports"] + list(extra)
-        # a CLI é conversadora; o silêncio mantém a saída da suíte legível
+        arguments = ["--project-root", str(self.tmp), "--output-dir", "Saida"] + list(extra)
         with open(os.devnull, "w") as sink:
             stdout, sys.stdout = sys.stdout, sink
             try:
                 self.assertEqual(cli.main(arguments), 0)
             finally:
                 sys.stdout = stdout
-        return self.tmp / "Reports"
+        return self.tmp / "Saida"
 
-    def test_produces_the_expected_files(self):
-        reports = self._run("--export-csv")
-        self.assertTrue((reports / "summary.json").exists())
-        self.assertTrue((reports / "json" / "2026-03-17__day_report.json").exists())
-        self.assertTrue((reports / "csv" / "2026-03-17__1800__deconv.csv").exists())
-        self.assertTrue((reports / "csv" / "2026-03-17__1800__aux.csv").exists())
-        # o CSV do sinal bruto é opt-in
-        self.assertFalse((reports / "csv" / "2026-03-17__1800__rbd.csv").exists())
+    def test_writes_the_three_reference_tables(self):
+        out = self._run()
+        self.assertEqual(sorted(path.name for path in out.glob("*.csv")),
+                         ["2026-03-17T1800-deconv.csv",
+                          "2026-03-17T1800-rbd_adcu.csv",
+                          "2026-03-17T1800-rbd_cal.csv"])
 
-    def test_raw_csv_is_opt_in(self):
-        reports = self._run("--export-csv", "--export-rbd-csv")
-        self.assertTrue((reports / "csv" / "2026-03-17__1800__rbd.csv").exists())
-
-    def test_summary_points_at_files_instead_of_copying_them(self):
-        reports = self._run()
-        summary = json.loads((reports / "summary.json").read_text(encoding="utf-8"))
-        self.assertEqual(summary["day_reports"]["2026-03-17"], "2026-03-17__day_report.json")
-        self.assertNotIn("reports", summary)
-
-        day = json.loads((reports / "json" / "2026-03-17__day_report.json").read_text(encoding="utf-8"))
-        digest = day["hours"]["1800"]["rbd"]
-        self.assertEqual(digest["report_file"], "2026-03-17__1800__rbd_report.json")
-        self.assertNotIn("sampled_records", digest)
-
-    def test_craam_csv_reproduces_the_reference_layout(self):
-        """
-        Os três arquivos do toCSV() da referência: nomes, colunas e ordem.
-
-        A igualdade byte a byte contra o HATS.py real é verificada por
-        `make diff`, que precisa do ambiente de referência; aqui fica travado o
-        que dá para travar sem ele.
-        """
-        reports = self._run("--export-craam-csv")
-        folder = reports / "craam-csv"
-        names = sorted(path.name for path in folder.glob("*.csv"))
-        self.assertEqual(names, ["2026-03-17T1800-deconv.csv",
-                                 "2026-03-17T1800-rbd_adcu.csv",
-                                 "2026-03-17T1800-rbd_cal.csv"])
-
-        deconv = (folder / "2026-03-17T1800-deconv.csv").read_text(encoding="utf-8")
-        self.assertTrue(deconv.startswith("time,husec,amplitude\n"))
-
-        calibrated = (folder / "2026-03-17T1800-rbd_cal.csv").read_text(encoding="utf-8")
-        self.assertTrue(calibrated.startswith("golay,chopper,temp_hics,temp_env,temp_golay\n"))
-
+    def test_column_layout_matches_the_reference(self):
+        out = self._run()
+        self.assertTrue((out / "2026-03-17T1800-deconv.csv").read_text(encoding="utf-8")
+                        .startswith("time,husec,amplitude\n"))
+        self.assertTrue((out / "2026-03-17T1800-rbd_cal.csv").read_text(encoding="utf-8")
+                        .startswith("golay,chopper,temp_hics,temp_env,temp_golay\n"))
         # O toCSV() grava o apontamento por cima do CSV do sinal bruto: os dois
         # usam o nome '-rbd_adcu.csv'. O conteúdo final é o apontamento.
-        adcu = (folder / "2026-03-17T1800-rbd_adcu.csv").read_text(encoding="utf-8")
-        self.assertTrue(adcu.startswith("husec,jd,sid,elevation,azimuth,"))
+        self.assertTrue((out / "2026-03-17T1800-rbd_adcu.csv").read_text(encoding="utf-8")
+                        .startswith("husec,jd,sid,elevation,azimuth,"))
 
-    def test_craam_timestamps_truncate_like_the_reference(self):
-        """O husec2dt() da referência trunca os microssegundos em ponto flutuante."""
-        from hats import timebase
+    def test_writes_nothing_of_its_own(self):
+        """Nada além das três tabelas da referência deve aparecer na saída."""
+        out = self._run()
+        self.assertEqual(sorted(path.name for path in out.iterdir()),
+                         sorted(path.name for path in out.glob("*.csv")))
+
+    def test_timestamps_truncate_like_the_reference(self):
         self.assertEqual(str(timebase.craam_datetime("2026-03-17", 648000643)),
                          "2026-03-17 18:00:00.064299")
         self.assertEqual(str(timebase.craam_datetime("2026-03-17", 648000000)),
                          "2026-03-17 18:00:00")
 
-    def test_csv_files_are_utf8(self):
-        reports = self._run("--export-csv")
-        for path in (reports / "csv").glob("*.csv"):
-            path.read_text(encoding="utf-8")   # levanta se não for UTF-8
+    def test_floats_use_the_shortest_round_trip_repr(self):
+        self.assertEqual(pipeline._cell(50.690450199999994), "50.690450199999994")
+        self.assertEqual(pipeline._cell(4.6044), "4.6044")
+        self.assertEqual(pipeline._cell(648000643), "648000643")
 
-    @unittest.skipUnless(numpy_installed(), "numpy não instalado")
-    def test_backends_produce_the_same_csv(self):
-        plain = self._run("--export-csv", "--export-rbd-csv", "--backend", "stdlib")
-        kept = self.tmp / "keep"
-        shutil.copytree(plain, kept)
-        shutil.rmtree(plain)
-        fast = self._run("--export-csv", "--export-rbd-csv", "--backend", "numpy")
-
-        for path in sorted((kept / "csv").glob("*.csv")):
-            other = fast / "csv" / path.name
-            if path.name.endswith("deconv.csv"):
-                continue   # difere em ~1e-14 mV, ordem de soma
-            self.assertEqual(path.read_bytes(), other.read_bytes(), msg=path.name)
+    def test_tables_are_utf8(self):
+        for path in self._run().glob("*.csv"):
+            path.read_text(encoding="utf-8")
 
 
 if __name__ == "__main__":

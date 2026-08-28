@@ -7,21 +7,20 @@ chopper a 20 Hz, amostrada a 1 kHz, e a amplitude em 20 Hz é extraída por soft
 
 Organização do pacote
 ---------------------
-    constants      grandezas fixas do instrumento e códigos de operação
+    constants      grandezas fixas do instrumento
     timebase       conversões entre husec e datetime
     schema         formato dos registros, lido dos XML do CRAAM
-    calibration    decodificação do AD7770 e conversão para unidades físicas
-    statistics     acumuladores de estatística em streaming
-    demodulation   extração da amplitude em 20 Hz
     records        iteração sobre os arquivos binários
-    rbd            análise do sinal do detector
-    pointing       análise do apontamento do telescópio
-    weather        estação meteorológica
+    calibration    decodificação do AD7770 e conversão para unidades físicas
+    demodulation   extração da amplitude em 20 Hz
+    rbd            leitura e demodulação do sinal do detector
     discovery      descoberta dos arquivos no disco
-    exporters      escrita de CSV e JSON
-    reports        montagem dos relatórios
+    pipeline       orquestração e escrita das tabelas
     backends       escolha entre o caminho numpy e o stdlib
     cli            interface de linha de comando
+
+Este pacote reproduz a saída do HATS.py do CRAAM byte a byte. Não acrescenta
+colunas, arquivos nem relatórios: o que ele oferece é a mesma saída, mais rápido.
 
 O pacote funciona só com a biblioteca padrão. Quando numpy está instalado, o
 backend acelerado é escolhido automaticamente; os resultados são os mesmos.

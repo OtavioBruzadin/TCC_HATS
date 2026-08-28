@@ -90,21 +90,20 @@ def time_it(function, repeats):
 def measure_package(rbd_path, xml_dir, backend, repeats):
     from hats import backends, constants, schema as schema_module
 
-    name, analyser, _exporter = backends.resolve(backend)
+    name, analyser = backends.resolve(backend)
     loaded = schema_module.load(xml_dir, "rbd")
     options = {"demodulate": True, "window_size": 128, "steps": 32,
                "target_frequency": 20.0, "sampling_frequency": 1000.0,
-               "bin_mode": "reference", "record_limit": None,
-               "drop_before_hour": True,
-               "goertzel_c_legacy": True}
+               "bin_mode": "reference", "record_limit": None}
     before = peak_memory_mb()
     elapsed, result = time_it(lambda: analyser(rbd_path, loaded, dict(options)), repeats)
     return {
         "label": "pacote hats, backend {}".format(name),
         "seconds": elapsed,
         "memory_mb": max(peak_memory_mb() - before, peak_memory_mb()),
-        "windows": result["demodulation"]["windows"],
-        "amplitude_mean": result["demodulation"]["amplitude"]["mean"],
+        "windows": len(result["deconv"][1]) if result.get("deconv") else 0,
+        "amplitude_mean": (sum(result["deconv"][1]) / len(result["deconv"][1])
+                           if result.get("deconv") else 0.0),
     }
 
 

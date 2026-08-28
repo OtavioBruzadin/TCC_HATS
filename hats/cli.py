@@ -3,50 +3,37 @@
 import argparse
 from pathlib import Path
 
-from hats import __version__, backends, constants, discovery, exporters, reports, schema as schema_module
+from hats import __version__, backends, constants, discovery, pipeline, schema as schema_module
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="hats_report",
-        description="Lê, valida e demodula os dados do telescópio solar HATS.")
+        description="Reimplementação do processamento de dados do HATS. Produz exatamente "
+                    "as mesmas tabelas que o HATS.py do CRAAM, byte a byte.")
 
     layout = parser.add_argument_group("localização dos arquivos")
     layout.add_argument("--project-root", default=".")
     layout.add_argument("--data-dir", default="Data")
-    layout.add_argument("--reports-dir", default="Reports")
+    layout.add_argument("--output-dir", default="Saida",
+                        help="Onde gravar as tabelas. Padrão: Saida/")
     layout.add_argument("--xml-dir", default="XMLTables")
-    layout.add_argument("--day", default=None, help="Processa só este dia, no formato YYYY-MM-DD.")
-
-    output = parser.add_argument_group("saídas")
-    output.add_argument("--export-csv", action="store_true",
-                        help="Exporta CSV do apontamento, da estação e da amplitude demodulada.")
-    output.add_argument("--export-rbd-csv", action="store_true",
-                        help="Também exporta o CSV do sinal bruto de 1 kHz: ~3,6 M linhas "
-                             "e ~767 MB por hora de dados.")
-    output.add_argument("--export-craam-csv", action="store_true",
-                        help="Grava, em Reports/craam-csv/, os mesmos três CSV que o "
-                             "toCSV() do HATS.py grava — byte a byte iguais aos dele.")
-    output.add_argument("--csv-limit", type=int, default=None, help="Máximo de linhas por CSV.")
-    output.add_argument("--sample-count", type=int, default=5,
-                        help="Registros mostrados de cada ponta do arquivo no JSON.")
+    layout.add_argument("--day", default=None, help="Processa só este dia, YYYY-MM-DD.")
 
     processing = parser.add_argument_group("processamento")
     processing.add_argument("--record-limit", type=int, default=None,
                             help="Lê só os N primeiros registros de cada binário.")
-    processing.add_argument("--no-demod", action="store_true", help="Pula a demodulação de 20 Hz.")
+    processing.add_argument("--no-demod", action="store_true",
+                            help="Pula a demodulação; não grava o arquivo -deconv.csv.")
     processing.add_argument("--fft-window", type=int, default=constants.WINDOW_SIZE)
     processing.add_argument("--fft-steps", type=int, default=constants.STEPS)
     processing.add_argument("--fft-target-hz", type=float, default=constants.TARGET_FREQUENCY)
     processing.add_argument("--fft-sampling-hz", type=float, default=constants.SAMPLING_FREQUENCY)
-    processing.add_argument("--fft-bin-mode", choices=["reference", "exact"], default="reference",
-                            help="'reference' reproduz o floor() do HATS_fft.c; 'exact' usa o "
-                                 "bin fracionário e elimina o scalloping dependente de fase.")
     processing.add_argument("--backend", choices=["auto", "numpy", "stdlib"], default="auto")
 
     info = parser.add_argument_group("informação")
     info.add_argument("--init-project", action="store_true", help="Só cria a estrutura de pastas.")
-    info.add_argument("--backends", action="store_true", help="Mostra os backends disponíveis e sai.")
+    info.add_argument("--backends", action="store_true", help="Mostra os backends disponíveis.")
     info.add_argument("--version", action="version", version="hats {}".format(__version__))
     return parser
 
@@ -58,13 +45,13 @@ def main(argv=None):
         print(backends.describe())
         return 0
 
-    backend_name, analyser, rbd_exporter = backends.resolve(args.backend)
+    backend_name, analyser = backends.resolve(args.backend)
     project_root = Path(args.project_root).resolve()
-    paths = discovery.ensure_structure(project_root, args.data_dir, args.reports_dir, args.xml_dir)
+    paths = discovery.ensure_structure(project_root, args.data_dir, args.output_dir, args.xml_dir)
 
     if args.init_project:
         print("Projeto criado em {}".format(project_root))
-        for key in ("data_dir", "reports_dir", "xml_dir"):
+        for key in ("data_dir", "output_dir", "xml_dir"):
             print("  {:<12} {}".format(key, paths[key]))
         return 0
 
@@ -80,58 +67,29 @@ def main(argv=None):
         "steps": args.fft_steps,
         "target_frequency": args.fft_target_hz,
         "sampling_frequency": args.fft_sampling_hz,
-        "bin_mode": args.fft_bin_mode,
+        "bin_mode": "reference",
         "record_limit": args.record_limit,
-        # Fixos: este pipeline reproduz a referência. Ver hats/constants.py.
-        "drop_before_hour": True,
-        "goertzel_c_legacy": True,
     }
-    settings = {
-        "options": options,
-        "analyser": analyser,
-        "rbd_exporter": rbd_exporter,
-        "sample_count": args.sample_count,
-        "export_csv": args.export_csv,
-        "export_rbd_csv": args.export_rbd_csv,
-        "export_craam_csv": args.export_craam_csv,
-        "csv_limit": args.csv_limit,
-    }
+
     schemas = {
         "rbd": schema_module.load(paths["xml_dir"], "rbd"),
         "aux": schema_module.load(paths["xml_dir"], "aux"),
     }
 
-    print("hats {}  |  backend: {}  |  reproduz o HATS.py do CRAAM bit a bit".format(
-        __version__, backend_name))
-    processed = []
-    for day_key, day_info in day_index.items():
-        reports.process_day(day_key, day_info, paths, schemas, settings)
-        processed.append(day_key)
+    print("hats {}  |  backend: {}".format(__version__, backend_name))
+    total = 0
+    for day_key, day_info in sorted(day_index.items()):
+        for hour_key, files in sorted(day_info["hours"].items()):
+            if hour_key == "daily":
+                continue
+            print("  {} {} ...".format(day_key, hour_key), flush=True)
+            written, _deconv = pipeline.process_hour(
+                paths["output_dir"], "{}T{}".format(day_key, hour_key),
+                files.get("rbd"), schemas["rbd"], files.get("aux"), schemas["aux"],
+                options, analyser)
+            for path in written:
+                print("    {}".format(path.name))
+            total += len(written)
 
-    exporters.write_json({
-        "hats_version": __version__,
-        "backend": backend_name,
-        "fidelity": "reproduz o HATS.py do CRAAM bit a bit",
-        "project_root": str(project_root),
-        "data_dir": str(paths["data_dir"]),
-        "reports_dir": str(paths["reports_dir"]),
-        "xml_dir": str(paths["xml_dir"]),
-        "rbd_schema_mode": schemas["rbd"].get("mode"),
-        "rbd_schema_source": schemas["rbd"].get("source"),
-        "aux_schema_mode": schemas["aux"].get("mode"),
-        "aux_schema_source": schemas["aux"].get("source"),
-        "processing_options": options,
-        "aux_unit_corrections": {
-            name: {"declared_in_xml": declared, "actual": actual,
-                   "corrected_field": corrected_name, "factor": factor}
-            for name, (declared, actual, factor, corrected_name)
-            in schema_module.AUX_UNIT_FIXES.items()
-        },
-        "days_processed": processed,
-        # Referências, não cópias: cada relatório já está no seu próprio arquivo.
-        "day_reports": {day: "{}__day_report.json".format(day) for day in processed},
-    }, paths["reports_dir"] / "summary.json")
-
-    print("{} dia(s) processado(s).".format(len(processed)))
-    print("Resumo em {}".format(paths["reports_dir"] / "summary.json"))
+    print("{} arquivo(s) em {}".format(total, paths["output_dir"]))
     return 0

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hats import calibration, constants, demodulation, schema, statistics, timebase
+from hats import calibration, constants, demodulation, schema, timebase
 
 
 class TestCalibration(unittest.TestCase):
@@ -31,22 +31,6 @@ class TestCalibration(unittest.TestCase):
     def test_apply_uses_slope_and_offset(self):
         field = {"origin": "ad7770", "convert": "yes", "slope": 0.001154, "offset": 0.0}
         self.assertAlmostEqual(calibration.apply(field, 94027), 108.507158, places=9)
-
-    def test_scale_summary_is_exact_for_affine_conversion(self):
-        values = [10.0, 20.0, 30.0, 40.0]
-        slope, offset = 0.5, -3.0
-        raw = statistics.summarize(values)
-        scaled = calibration.scale_summary(raw, slope, offset)
-        direct = statistics.summarize([v * slope + offset for v in values])
-        for key in ("min", "max", "mean", "sd"):
-            self.assertAlmostEqual(scaled[key], direct[key], places=12, msg=key)
-
-    def test_scale_summary_swaps_extremes_for_negative_slope(self):
-        raw = statistics.summarize([1.0, 5.0])
-        scaled = calibration.scale_summary(raw, -2.0, 0.0)
-        self.assertEqual(scaled["min"], -10.0)
-        self.assertEqual(scaled["max"], -2.0)
-
 
 class TestTimebase(unittest.TestCase):
     def test_fast_formatter_matches_datetime_path(self):
@@ -126,21 +110,10 @@ class TestDemodulation(unittest.TestCase):
             spreads[mode] = max(abs(a - mean) for a in amplitudes)
         self.assertLess(spreads["exact"], spreads["reference"] / 10)
 
-    def test_dot_product_agrees_with_goertzel_recursion(self):
-        signal = self._sine(100.0, 20.0, 512, phase=1.3)
-        window = demodulation.flattop_window(self.window)
-        coefficient = 2.0 * math.cos(2.0 * math.pi * 2.0 / self.window)
-        _, amplitudes = demodulation.demodulate(signal, list(range(512)))
-        for index, amplitude in enumerate(amplitudes):
-            recursion = demodulation.goertzel_amplitude(
-                signal, index * self.steps, window, coefficient, self.window) / self.window
-            self.assertAlmostEqual(amplitude, recursion, places=10)
-
-    def test_c_legacy_reproduces_the_upstream_recursion_bit_for_bit(self):
+    def test_recursion_reproduces_the_reference_early_termination(self):
         """
-        O modo c_legacy tem de bater com um porte fiel da recursão do
-        windowed_dft.c, incluindo o encerramento antecipado — não apenas
-        aproximar. A igualdade é exata porque a ordem das operações é a mesma.
+        A recursão do pacote tem de bater com um porte fiel do windowed_dft.c,
+        incluindo o encerramento antecipado — é o que garante o bit a bit.
         """
         signal = self._sine(100.0, 20.0, 1024, phase=0.9)
         window = demodulation.flattop_window(self.window)
@@ -157,20 +130,10 @@ class TestDemodulation(unittest.TestCase):
             return math.sqrt(last * last + previous * previous
                              - coefficient * last * previous) / self.window
 
-        _, amplitudes = demodulation.demodulate(signal, list(range(1024)), c_legacy=True)
+        _, amplitudes = demodulation.demodulate(signal, list(range(1024)))
         for index, amplitude in enumerate(amplitudes):
             self.assertEqual(amplitude, upstream(index * self.steps),
                              msg="janela {}".format(index))
-
-    def test_c_legacy_costs_about_three_parts_in_a_hundred_thousand(self):
-        """A diferença entre o modo fiel e o correto é o defeito do C, medido."""
-        signal = self._sine(100.0, 20.0, 2048, phase=0.4)
-        husec = list(range(2048))
-        _, correct = demodulation.demodulate(signal, husec)
-        _, legacy = demodulation.demodulate(signal, husec, c_legacy=True)
-        worst = max(abs(a - b) / abs(a) for a, b in zip(correct, legacy))
-        self.assertLess(worst, 1e-4)
-        self.assertGreater(worst, 1e-6)
 
     def test_sliding_demodulator_matches_batch(self):
         signal = self._sine(100.0, 20.0, 1000)
