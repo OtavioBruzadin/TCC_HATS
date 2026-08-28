@@ -143,6 +143,67 @@ Goertzel, e nada mais.
 Fora dessa comparação o descarte não se justifica: os registros descartados têm
 `sample` e `husec` contínuos, são dados bons.
 
+### Gerar as duas tabelas e comparar com `diff`
+
+Três comandos independentes. Cada um roda um pipeline sozinho e grava a série
+demodulada num formato único, para o `diff` funcionar.
+
+```bash
+make csv-craam
+```
+
+```bash
+make csv-nosso
+```
+
+```bash
+diff Reports/diff/craam.csv Reports/diff/nosso.csv
+```
+
+Ou `make diff`, que faz os três de uma vez.
+
+```
+2,10c2,10
+< 648000643,122.590355          ← CRAAM
+< 648000963,124.871696
+< 648001283,124.851572
+---
+> 648000643,122.592995          ← nosso
+> 648000963,124.870076
+> 648001283,124.852553
+```
+
+O formato é `husec,amplitude_mV` nos dois, com o mesmo número de casas decimais.
+Isso é necessário: os CSV nativos de cada pipeline têm colunas e formatos de
+tempo diferentes — `time,husec,amplitude` contra `husec,datetime_utc,amplitude_mV`
+—, então o `diff` acusaria toda linha como divergente sem que número nenhum
+tivesse mudado.
+
+`make csv-nosso` reproduz o descarte dos registros anteriores à hora nominal,
+porque sem isso as grades de janelas não coincidem e o `diff` compararia
+instantes diferentes. Para ver a saída sem essa concessão:
+`python3 tools/deconv_csv.py --source nosso --sem-descarte --out /tmp/livre.csv`.
+
+**A precisão é o controle útil aqui.** `DECIMALS` diz em quantas casas os dois
+são comparados:
+
+| | linhas divergentes |
+|---|---|
+| `DECIMALS=6` | 9 de 9 |
+| `DECIMALS=4` | 9 de 9 |
+| `DECIMALS=3` | 8 de 9 |
+| `DECIMALS=2` | 1 de 9 |
+
+```bash
+make diff DECIMALS=3
+```
+
+Ou seja: os dois pipelines concordam até a segunda casa decimal em milivolts, e
+divergem a partir da terceira. A diferença é o off-by-one do Goertzel no
+`windowed_dft.c`, caracterizada em 2,762×10⁻⁵ relativo.
+
+Outro dia ou outra hora: `make diff DAY=2026-03-18 HOUR=2000`.
+
 ### Rodar o código original do CRAAM
 
 ```bash

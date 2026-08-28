@@ -6,12 +6,13 @@
 PYTHON  ?= python3
 REFVENV ?= .refvenv
 REFPY    = $(REFVENV)/bin/python
-DAY     ?= 2026-03-17
+DAY      ?= 2026-03-17
+DECIMALS ?= 6
 HOUR    ?= 1800
 DAYDIR  ?= Data/$(DAY)
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell run-nosso run-craam run-ambos run-alinhado setup-reference
+.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell run-nosso run-craam run-ambos run-alinhado csv-craam csv-nosso diff setup-reference
 
 help:
 	@echo ""
@@ -28,6 +29,11 @@ help:
 	@echo "    make run-ambos           os dois, e lista as duas pastas"
 	@echo "    make run-alinhado        o nosso replicando o descarte do HATS.py,"
 	@echo "                             para as janelas caírem na mesma grade dele"
+	@echo ""
+	@echo "  Gerar as duas tabelas para comparar com diff"
+	@echo "    make csv-craam           -> Reports/diff/craam.csv"
+	@echo "    make csv-nosso           -> Reports/diff/nosso.csv"
+	@echo "    make diff                gera as duas e mostra o diff"
 	@echo ""
 	@echo "  Testar"
 	@echo "    make test                suíte completa (não precisa de dados nem de numpy)"
@@ -47,7 +53,7 @@ help:
 	@echo "  Preparar"
 	@echo "    make setup-reference     monta o ambiente do CRAAM (venv + HATS_fft)"
 	@echo ""
-	@echo "  Variáveis: DAY=$(DAY)  HOUR=$(HOUR)  PYTHON=$(PYTHON)"
+	@echo "  Variáveis: DAY=$(DAY)  HOUR=$(HOUR)  DECIMALS=$(DECIMALS)  PYTHON=$(PYTHON)"
 	@echo ""
 
 test:
@@ -90,6 +96,20 @@ run-nosso:
 run-craam: check-reference
 	@rm -rf Reports/craam
 	OUTDIR=$(CURDIR)/Reports/craam tools/craam_csv.sh $(DAY) $(HOUR)
+
+csv-craam: check-reference
+	@$(REFPY) tools/deconv_csv.py --source craam --day $(DAY) --hour $(HOUR) \
+	    --decimals $(DECIMALS) --out Reports/diff/craam.csv
+
+csv-nosso:
+	@$(PYTHON) tools/deconv_csv.py --source nosso --day $(DAY) --hour $(HOUR) \
+	    --decimals $(DECIMALS) --out Reports/diff/nosso.csv
+
+diff: csv-craam csv-nosso
+	@echo ""
+	@echo "  diff Reports/diff/craam.csv Reports/diff/nosso.csv"
+	@echo "  ----------------------------------------------------------------"
+	@diff Reports/diff/craam.csv Reports/diff/nosso.csv && echo "  (sem diferenças)" || true
 
 run-alinhado:
 	@rm -rf Reports/alinhado
