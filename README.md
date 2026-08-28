@@ -296,293 +296,41 @@ existem.
 
 ### Desempenho
 
-```bash
-make bench
-```
-
-Gera uma hora sintética de dados — 3,6 milhões de registros, 137 MB — e mede os
-backends. Com o ambiente de referência montado:
+Medido sobre um `.rbd` de hora inteira (3.600.000 registros, 137 MB), MacBook arm64,
+Python 3.9.6, melhor de 3 execuções.
 
 ```bash
 make bench-craam
 ```
 
-acrescenta o `HATS.py` do CRAAM à mesma tabela:
-
-```
- implementação                         segundos   memória MB    janelas    amplitude média
- -----------------------------------------------------------------------------------------
- pacote hats, backend stdlib               4.28           50     112496          99.018669
- pacote hats, backend numpy                0.18          131     112496          99.018669
- HATS.py do CRAAM 2026-04-17T0902BST       1.07          878     112496          99.018289
-```
-
-Para medir sobre um arquivo real em vez do sintético:
-
-```bash
-python3 tools/benchmark.py --rbd Data/2026-03-17/hats-2026-03-17T1800.rbd
-```
-
----
-
-## Estrutura do projeto
-
-```
-TCC_HATS/
-├── hats_report.py          entrada
-├── hats/                   o pacote
-├── tools/
-│   ├── compare_with_reference.py   confronta com o HATS.py do CRAAM
-│   └── side_by_side.py             imprime uma linha de cada, lado a lado
-├── prototypes/             versões anteriores, mantidas como registro
-├── Docs/upstream/          código do CRAAM, para referência
-├── XMLTables/              descrição do formato dos registros
-├── Data/                   não versionado
-└── Reports/                não versionado
-```
-
-### O pacote
-
-Cada módulo responde por uma coisa, e a ordem abaixo é mais ou menos a ordem em
-que os dados atravessam o sistema:
-
-| módulo | responsabilidade |
-|---|---|
-| `constants.py` | grandezas fixas do instrumento e códigos de operação |
-| `timebase.py` | conversões entre husec e datetime, com os formatadores rápidos |
-| `schema.py` | formato dos registros, lido dos XML; correções de unidade do AUX |
-| `records.py` | iteração sobre os binários, em registros ou em colunas |
-| `calibration.py` | decodificação do AD7770 e conversão para unidades físicas |
-| `statistics.py` | acumuladores em streaming e ajuste linear |
-| `demodulation.py` | janela flat-top, bin de análise, demodulador deslizante |
-| `rbd.py` | análise do sinal do detector — as duas implementações |
-| `pointing.py` | análise do apontamento, unidades e registros defasados |
-| `weather.py` | leitura e validação dos arquivos da estação |
-| `discovery.py` | estrutura de pastas e descoberta dos arquivos |
-| `exporters.py` | escrita de CSV e JSON |
-| `reports.py` | montagem dos relatórios e dos resumos |
-| `backends.py` | escolha entre o caminho numpy e o stdlib |
-| `cli.py` | interface de linha de comando |
-
-Onde há duas implementações da mesma coisa, elas ficam **no mesmo módulo**, lado a
-lado — `rbd.analyse_stdlib` e `rbd.analyse_numpy`, `exporters.export_rbd_csv` e
-`exporters.export_rbd_csv_numpy`. É mais fácil manter as duas coerentes vendo uma
-ao lado da outra do que em árvores paralelas. Quem escolhe é o `backends.py`, e só
-ele sabe que existe essa dualidade.
-
-A pasta `Data/` **não é versionada** e deve seguir este layout, com os `.aux` e `.ws`
-num subdiretório `aux/`, como o CRAAM organiza:
-
-```
-Data/
-└── 2026-03-17/
-    ├── hats-2026-03-17T1800.rbd
-    └── aux/
-        ├── hats-2026-03-17T1800.aux
-        └── hats-2026-03-17.ws
-```
-
-Há uma amostra reconstruída de 1000 registros em `Data/2026-03-17/` para os testes
-rodarem sem depender do download — veja o `LEIA-ME.txt` de lá. O `Data/` completo
-está no Drive:
-https://drive.google.com/drive/folders/1_aWg-CdfVP4UcG06CKtlhWi68MCRzkFz?usp=sharing
-
----
-
-## Saídas
-
-### CSV
-
-| arquivo | linhas por hora | conteúdo |
+| implementação | tempo | memória |
 |---|---|---|
-| `__deconv.csv` | ~112.000 | husec, datetime, amplitude demodulada em mV |
-| `__aux.csv` | ~3.420 | apontamento, mais as colunas corrigidas e `record_valid` |
-| `__ws.csv` | ~17.280/dia | tempo validado, estação, temperatura, umidade, pressão |
-| `__rbd.csv` | ~3.600.000 | sinal bruto de 1 kHz — **só com `--export-rbd-csv`** |
+| `HATS.py` do CRAAM (numpy + binário C) | 1,16 s | 896 MB |
+| pacote, stdlib, modo craam | 6,14 s | 65 MB |
+| **pacote, numpy, modo craam** | **0,11 s** | **93 MB** |
+| pacote, stdlib, modo corrigido | 4,13 s | 94 MB |
+| pacote, numpy, modo corrigido | 0,12 s | 135 MB |
 
-O CSV do RBD é opt-in porque custa ~24 s e ~767 MB por hora de dados, contra 0,4 s
-da análise inteira. Um arquivo de 3,6 milhões de linhas do sinal cru não se abre em
-planilha nenhuma; para análise o que serve é o `deconv.csv`. Ele existe como
-ferramenta de inspeção, e `--csv-limit` continua valendo.
+No modo padrão, com numpy, o pacote é **~10× mais rápido que a referência** usando
+**~10× menos memória** — e produzindo saída idêntica bit a bit. Sem numpy é ~5×
+mais lento, que é o preço de não ter dependência nenhuma.
 
-Quando pedido, é usado um exportador dedicado (`exporters.export_rbd_csv_numpy`,
-com fallback para `exporters.export_rbd_csv`). A saída é **byte-idêntica** à do caminho stdlib; o que muda é
-como chega lá:
+`make bench` mede só os backends, sem precisar do ambiente de referência.
+`--modos craam` ou `--modos corrigido` restringem a medição a um deles.
 
-| | s/hora |
-|---|---|
-| exportador stdlib | ~53 |
-| exportador dedicado (numpy) | ~24 |
+### A recursão do modo craam também é vetorizada
 
-O ganho veio quase todo dos timestamps: construir um `datetime` por registro custava
-22,3 s/hora só na coluna do husec, e a formatação por aritmética inteira faz o mesmo
-em 3,1 s. O que sobra — ~6 s de `str()` nas colunas float e ~11 s de `writerows` — é
-serialização de texto, e não dá para reduzir sem mudar a saída.
+A reprodução bit a bit exige a recursão de Goertzel, não o produto interno — a
+ordem das operações muda o arredondamento. Isso parecia condenar o modo padrão a
+ser lento, e por um momento foi: numpy dava 6,21 s contra 6,41 s do stdlib, ou
+seja ganho nenhum.
 
-Todos os CSV são gravados com `encoding="utf-8"` explícito, para não depender do
-locale do sistema.
-
-### JSON
-
-Um arquivo por objeto, e os agregadores apontam para eles em vez de copiá-los:
-
-```
-Reports/
-├── summary.json                          <- aponta para os day_report
-└── json/
-    ├── 2026-03-17__day_report.json       <- aponta para os relatórios da hora
-    ├── 2026-03-17__1800__rbd_report.json <- completo
-    ├── 2026-03-17__1800__aux_report.json <- completo
-    └── 2026-03-17__ws_report.json        <- completo
-```
-
-O `day_report` e o `summary` carregam um resumo útil de cada filho — contagem de
-registros, integridade, janelas, amplitude média, registros defasados, defasagem
-estimada — mais o campo `report_file` com o nome do arquivo completo.
-
-Antes, o mesmo conteúdo era gravado três vezes: o relatório da hora, embutido inteiro
-no `day_report`, embutido inteiro no `summary`. Com um dia de 10 horas o `summary`
-passava de 1 MB, e processando um mês crescia para dezenas de MB de dados repetidos.
-Na amostra atual, `summary.json` caiu de 37.517 para 1.653 bytes.
-
-## Formatos
-
-**`.rbd`** — 38 bytes por registro, 1 kHz (≈3,6 M registros/hora). O layout vem do
-`HATSDataFormat.xml`, não está no código. Os canais analógicos chegam do AD7770 com
-24 bits significativos dentro de um inteiro de 4 bytes, sinal no bit 23.
-
-**`.aux`** — 80 bytes por registro, ≈1 registro/segundo. Ponteria do telescópio vinda
-do `getPos`/TheSkyX.
-
-**`.ws`** — ASCII, uma linha a cada 5 s, formato `tempo,0R2,Ta=..C,Ua=..P,Pa=..H`.
-
----
-
-## Correções aplicadas nesta versão
-
-Verificadas contra efemérides solares independentes nos dias 2026-03-17/18/19.
-
-**1. Unidades erradas no `HATSAuxFormat.xml`.** O XML declara graus, mas os dados
-estão em outras unidades:
-
-| campo | declarado | real |
-|---|---|---|
-| `right_ascension` | degrees | **hours** (fator 15) |
-| `ra_rate` | degrees/s | **arcsec/s** |
-| `dec_rate` | degrees/s | **arcsec/s** |
-
-Os campos originais são preservados; versões convertidas são adicionadas como
-`right_ascension_deg`, `ra_rate_deg_s`, `dec_rate_deg_s`.
-
-**2. Registros `.aux` defasados.** Entre 12% e 23% dos registros trazem `jd == 0` e
-uma solução de ponteria coerente porém **antiga** (1053,5 s ≈ 17,6 min, defasagem
-constante nos três dias, σ = 0,04 s), enquanto o `husec` está correto. São marcados
-com `record_valid = False`, excluídos de todas as estatísticas e contabilizados no
-relatório, junto com a defasagem estimada.
-
-Isso importa: quase todos os registros com `opmode` 7 e 8 (varreduras em declinação
-e ascensão reta) caem nesse conjunto. Analisar varreduras sem filtrar casa flag de
-scan real com coordenadas de 17 minutos antes.
-
-**3. Timestamps da estação meteorológica.** Os arquivos brutos contêm linhas com um
-byte `0x7f` colado antes do timestamp. Agora são limpos e validados; linhas
-irrecuperáveis são descartadas e contadas.
-
-**4. Demodulação em 20 Hz.** Implementada — é o produto científico do instrumento, e
-não existia nas versões anteriores. Goertzel com janela flat-top (ISO 18431-1),
-janela de 128 amostras, passo de 32, saída a 31,25 Hz. Espelha o `HATS_fft.c`.
-
-**5. Estatísticas e integridade de arquivo inteiro.** As versões anteriores
-amostravam 10 registros de 3,6 milhões e não calculavam nada. Agora há min/max/média/
-desvio por canal, contagem de saltos em `sample` e `husec`, e contagem de registros
-anteriores à hora nominal do arquivo.
-
----
-
-## Notas sobre a demodulação
-
-**Bin de frequência.** O `HATS_fft.c` usa `floor(20·128/1000) = 2`, ou seja
-15,625 Hz e não 20 Hz. A janela flat-top tem lóbulo principal largo e absorve quase
-todo o erro, mas sobra um *scalloping* dependente de fase. Medido com seno sintético
-de 100 mV:
-
-| modo | média | desvio | erro |
-|---|---|---|---|
-| `reference` (bin 2) | 99,018 mV | 0,104 | −0,98% |
-| `exact` (bin 2,56) | 99,223 mV | 0,0016 | −0,78% |
-
-O padrão é `reference`, para permitir comparação direta com a saída do CRAAM.
-Em sinal sintético monocromático, `exact` reduz a dispersão em ~65×.
-
-Em dado real o quadro é outro: o sinal picado não é monocromático (o chopper mede
-20,02 Hz e há energia em 19, 21 e 22 Hz), então o bin exato responde mais estreito e
-acompanha a variação real da amplitude em vez de suavizá-la. Na hora de 2026-03-17
-T1800 a dispersão sobe de 1,03 para 2,56 mV. Nenhum dos dois está errado — medem
-coisas diferentes, e vale dizer qual foi usado ao reportar resultado.
-
-O viés residual de −0,78% é intrínseco à normalização da flat-top em N=128 e está
-presente também no código C original. É sistemático e linear (verificado em 50 e
-100 mV), então não afeta razões nem variações relativas.
-
-**Diferenças conhecidas em relação ao `HATS.py` de referência:**
-
-- O `HATS.py` descarta registros com `husec < hora×36000000`. Aqui eles são mantidos
-  e apenas contados — no arquivo `T1800` de 2026-03-17 são 559 registros, com
-  `sample` e `husec` perfeitamente contínuos, ou seja, dados bons.
-- O `windowed_dft.c` encerra a recursão de Goertzel um passo antes do devido (usa
-  `s[N-2]` e `s[N-3]` em vez de `s[N-1]` e `s[N-2]`). A diferença medida contra uma
-  DFT direta é de 0,003%; aqui foi usada a forma correta.
-- O número de janelas segue a fórmula do C, `(N - window + 1) // steps`, que descarta
-  a última janela válida. Mantido para as saídas terem o mesmo comprimento.
-
----
-
-## Fontes upstream
-
-Código de referência: https://github.com/guigue/CRAAM-Instruments (diretório `HATS/`).
-Wiki: `HATSpy: User Manual V0.01` e `HATS Pointing Model`.
-
-**Atenção à versão.** O `HATS_software.zip` traz `HATS.py` em `2025-10-17T1145BST`;
-o repositório está em `2026-04-17T0902BST`. A revisão de 2026-04-17 corrige o
-`extract_scans()`, que antes retornava só a última varredura da série **e usava os
-códigos de `opmode` trocados**. O mapeamento correto é:
-
-| opmode | significado |
-|---|---|
-| 0 | tracking |
-| 7 | varredura em ascensão reta |
-| 8 | varredura em declinação |
-| 10 | skydip |
-
-Isso não é verificável a partir dos dados de 2026-03: praticamente todo registro com
-`opmode` 7 ou 8 é um dos defasados (61 de 62), então a excursão real em RA e Dec
-durante a varredura não aparece. Seguimos o upstream.
-
-**Unidades: o manual repete os erros do XML.** A wiki descreve `ra_rate`/`dec_rate`
-como degrees/second e `ms` como "milliseconds since 0 UT". Medido, as taxas estão em
-arcsec/s e `ms` é o milissegundo dentro do segundo (`sec` é unix time, não segundos
-desde 0 UT). A documentação e o XML concordam entre si e discordam do dado.
-
-A wiki **não** documenta: códigos de opmode, o procedimento de demodulação, o skydip,
-constantes de calibração, nem o `extract_scans`. Para isso, a fonte é o código.
-
-
-## Desempenho
-
-Medido sobre um `.rbd` de hora inteira (3.600.000 registros, 137 MB), MacBook arm64,
-Python 3.9.6, melhor de 3 execuções.
-
-| | tempo | memória de pico |
-|---|---|---|
-| `HATS.py` de referência (numpy + binário C) | 1,08 s | 828 MB |
-| pacote `hats`, backend stdlib | 4,8 s | 34 MB |
-| **pacote `hats`, backend numpy** | **0,13 s** | **140 MB** |
-
-O backend numpy é **~8,3× mais rápido que a referência** usando **~6,5× menos memória**. O caminho
-stdlib, em Python puro, é ~4,4× mais lento que a referência mas ~24× mais leve.
-
-Numa primeira execução com cache de página frio fica em torno de 0,26 s, o que
-ainda é ~4× mais rápido que a referência.
+A saída foi observar que a recursão é sequencial **dentro** de uma janela, mas as
+janelas são **independentes entre si**. Vetorizando através delas, a ordem das
+operações dentro de cada janela fica preservada — que é o que garante o bit a bit
+— e 112 mil laços de 128 passos viram 128 operações sobre vetores de 112 mil
+elementos. O resultado é 0,11 s, verificado idêntico ao caminho stdlib em todos
+os bits, por teste.
 
 ### De onde vem o ganho sobre o CRAAM
 
