@@ -75,6 +75,9 @@ def main():
     parser.add_argument("--fft-program", default=None)
     parser.add_argument("--record", type=int, default=0,
                         help="Índice do registro a mostrar, contado sobre o que a referência manteve.")
+    parser.add_argument("--modo", choices=["craam", "corrigido"], default="craam",
+                        help="Modo de processamento do pacote. 'craam' (padrão) reproduz a "
+                             "referência bit a bit.")
     parser.add_argument("--backend", choices=["auto", "numpy", "stdlib"], default="auto")
     args = parser.parse_args()
 
@@ -84,6 +87,7 @@ def main():
     from hats import backends, calibration, constants, demodulation, pointing, records, schema as schema_module
 
     backend_name, _analyser, _exporter = backends.resolve(args.backend)
+    mode_settings = constants.PROCESSING_MODES[args.modo]
 
     xml_dir = project_dir / args.xml_dir
     upstream_dir = project_dir / args.upstream_dir
@@ -99,7 +103,7 @@ def main():
     print()
     print(" arquivo   : {}".format(rbd_path.name))
     print(" referência: HATS.py {}".format(HATS.__version__))
-    print(" nosso     : pacote hats (backend {})".format(backend_name))
+    print(" nosso     : pacote hats (backend {}, modo {})".format(backend_name, args.modo))
     print(paint(" nota: a referência descarta {} registros do início (husec < hora*36000000);"
                 .format(reference.rbd.MetaData.get("N_Records_Deleted", 0)), DIM))
     print(paint("       os índices abaixo são contados sobre o que ela manteve.", DIM))
@@ -138,7 +142,8 @@ def main():
 
     signal = array("d", [float(x) for x in reference_calibrated["golay"]])
     husec = array("Q", [int(x) for x in reference_raw["husec"]])
-    our_husec, our_amplitude = demodulation.demodulate(signal, husec)
+    our_husec, our_amplitude = demodulation.demodulate(
+        signal, husec, c_legacy=mode_settings["goertzel_c_legacy"])
     window = min(args.record, len(our_amplitude) - 1) if len(our_amplitude) else 0
 
     if len(our_amplitude):

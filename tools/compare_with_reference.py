@@ -48,6 +48,9 @@ def build_argument_parser():
                         help="Caminho do binário HATS_fft. Default: <upstream-dir>/HATS_fft.")
     parser.add_argument("--json-out", default=None, help="Grava o resultado em JSON.")
     parser.add_argument("--fft-bin-mode", choices=["reference", "exact"], default="reference")
+    parser.add_argument("--modo", choices=["craam", "corrigido"], default="craam",
+                        help="Modo de processamento do pacote. 'craam' (padrão) reproduz a "
+                             "referência bit a bit.")
     parser.add_argument("--backend", choices=["auto", "numpy", "stdlib"], default="auto")
     return parser
 
@@ -90,8 +93,10 @@ def compare(args):
 
     from hats import backends, calibration, demodulation, records, schema as schema_module
 
+    from hats import constants
     backend_name, analyser, _exporter = backends.resolve(args.backend)
-    print("Comparando o pacote hats   backend: {}".format(backend_name))
+    mode_settings = constants.PROCESSING_MODES[args.modo]
+    print("Comparando o pacote hats   backend: {}   modo: {}".format(backend_name, args.modo))
 
     xml_dir = (project_dir / args.xml_dir) if not Path(args.xml_dir).is_absolute() else Path(args.xml_dir)
     upstream_dir = (project_dir / args.upstream_dir) if not Path(args.upstream_dir).is_absolute() else Path(args.upstream_dir)
@@ -164,7 +169,9 @@ def compare(args):
     # confirma que o analisador escolhido lê o arquivo com os mesmos totais
     analysis = analyser(rbd_path, rbd_schema, {
         "demodulate": False, "window_size": 128, "steps": 32, "target_frequency": 20.0,
-        "sampling_frequency": 1000.0, "bin_mode": args.fft_bin_mode, "record_limit": None})
+        "sampling_frequency": 1000.0, "bin_mode": args.fft_bin_mode, "record_limit": None,
+        "drop_before_hour": mode_settings["drop_before_hour"],
+        "goertzel_c_legacy": mode_settings["goertzel_c_legacy"]})
     print()
     print("  analisador {}: total={} registros, {} anteriores à hora nominal".format(
         backend_name, analysis["total_records"], analysis["integrity"]["records_before_nominal_hour"]))
@@ -184,7 +191,9 @@ def compare(args):
     # backends foram verificados equivalentes a 5e-16; ver README.
     signal = array("d", [float(x) for x in ref_cal["golay"]])
     husec = array("Q", [int(x) for x in ref_raw["husec"]])
-    my_husec, my_amplitude = demodulation.demodulate(signal, husec, bin_mode=args.fft_bin_mode)
+    my_husec, my_amplitude = demodulation.demodulate(
+        signal, husec, bin_mode=args.fft_bin_mode,
+        c_legacy=mode_settings["goertzel_c_legacy"])
     ref_husec = reference.rbd.Deconv["husec"]
     ref_amplitude = reference.rbd.Deconv["amplitude"]
 

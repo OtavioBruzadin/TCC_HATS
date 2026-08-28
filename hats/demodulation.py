@@ -163,6 +163,31 @@ def goertzel_amplitude_c_legacy(signal, offset, window, coefficient, window_size
     return math.sqrt(last * last + previous * previous - coefficient * last * previous)
 
 
+def numpy_amplitudes_c_legacy(views, window, coefficient, window_size):
+    """
+    Recursão do windowed_dft.c avaliada em todas as janelas ao mesmo tempo.
+
+    A recursão é sequencial dentro de uma janela, mas as janelas são
+    independentes entre si. Vetorizar através delas mantém a ordem das operações
+    dentro de cada uma — que é o que garante o resultado bit a bit — e ainda
+    assim troca 112 mil laços de 128 passos por 128 operações sobre vetores de
+    112 mil elementos.
+
+    O laço para em N-2 porque o C descarta s[N-1]: a leitura usa s[N-2] e
+    s[N-3]. Calcular o último passo não mudaria nada, e omiti-lo poupa uma
+    iteração.
+    """
+    import numpy as np
+
+    previous = np.zeros(views.shape[0], dtype=np.float64)       # s[-1]
+    current = window[0] * views[:, 0].astype(np.float64)        # s[0]
+    for index in range(1, window_size - 1):
+        latest = window[index] * views[:, index] + coefficient * current - previous
+        previous = current
+        current = latest
+    return np.sqrt(current * current + previous * previous - coefficient * current * previous)
+
+
 class SlidingDemodulator(object):
     """
     Demodula janelas conforme as amostras chegam, sem guardar o arquivo inteiro.

@@ -120,6 +120,21 @@ class TestRbdAnalysis(TemporaryProject):
         self.assertTrue(craam["demodulation"]["goertzel_c_legacy"])
         self.assertFalse(corrected["demodulation"]["goertzel_c_legacy"])
 
+    @unittest.skipUnless(numpy_installed(), "numpy não instalado")
+    def test_craam_mode_is_bit_identical_across_backends(self):
+        """
+        No modo craam a igualdade bit a bit é o produto; se os dois backends
+        divergirem em um único bit, a reprodução da referência deixa de valer.
+        """
+        options = options_for("craam")
+        plain = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, dict(options))
+        fast = rbd.analyse_numpy(self.paths["rbd"], self.rbd_schema, dict(options))
+        _, plain_amplitude, _ = plain["_deconv"]
+        _, fast_amplitude, _ = fast["_deconv"]
+        self.assertEqual(len(plain_amplitude), len(fast_amplitude))
+        for index, (one, other) in enumerate(zip(plain_amplitude, fast_amplitude)):
+            self.assertEqual(one, other, msg="janela {}".format(index))
+
     def test_no_demod_option(self):
         options = dict(DEFAULT_OPTIONS, demodulate=False)
         result = rbd.analyse_stdlib(self.paths["rbd"], self.rbd_schema, options)

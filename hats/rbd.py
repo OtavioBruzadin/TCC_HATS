@@ -10,6 +10,7 @@ Verificadas equivalentes sobre uma hora de dados — contagens e husec idêntico
 amplitudes com erro relativo de 9e-16.
 """
 
+import math
 import operator
 
 from hats import calibration, constants, demodulation, records, schema as schema_module, statistics, timebase
@@ -221,12 +222,6 @@ def analyse_stdlib(path, schema, options):
 
 def analyse_numpy(path, schema, options):
     """Mesma análise, vetorizada. Escolhida automaticamente quando numpy existe."""
-    if options.get("goertzel_c_legacy"):
-        # A igualdade bit a bit com o C depende da ordem das operações da
-        # recursão, que não tem equivalente vetorizado. O modo é de comparação,
-        # não de produção, então o caminho lento serve.
-        return analyse_stdlib(path, schema, options)
-
     import numpy as np
     from numpy.lib.stride_tricks import sliding_window_view
 
@@ -246,10 +241,16 @@ def analyse_numpy(path, schema, options):
     max_windows = demodulation.window_count(count, window_size, steps) if demodulating else 0
     demodulating = demodulating and max_windows > 0
 
+    c_legacy = bool(options.get("goertzel_c_legacy", False))
     if demodulating:
         projection = demodulation.numpy_projection(
             window_size, options["target_frequency"], options["sampling_frequency"],
-            options["bin_mode"], options.get("goertzel_c_legacy", False))
+            options["bin_mode"], c_legacy)
+        if c_legacy:
+            legacy_window = demodulation.flattop_window(window_size)
+            legacy_coefficient = 2.0 * math.cos(2.0 * math.pi * demodulation.frequency_bin(
+                options["target_frequency"], window_size,
+                options["sampling_frequency"], options["bin_mode"]) / window_size)
         half = window_size // 2
         amplitude_blocks = []
         husec_blocks = []
@@ -289,7 +290,11 @@ def analyse_numpy(path, schema, options):
                     local = next_start - consumed
                     span = (available - 1) * steps + window_size
                     views = sliding_window_view(carry_signal[local:local + span], window_size)[::steps]
-                    amplitude_blocks.append(np.abs(views @ projection) / window_size)
+                    if c_legacy:
+                        amplitude_blocks.append(demodulation.numpy_amplitudes_c_legacy(
+                            views, legacy_window, legacy_coefficient, window_size) / window_size)
+                    else:
+                        amplitude_blocks.append(np.abs(views @ projection) / window_size)
                     husec_blocks.append(carry_husec[local + half + steps * np.arange(available)])
                     next_start += available * steps
                     emitted += available

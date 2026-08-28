@@ -36,9 +36,12 @@ PROTOTYPES = {
 
 
 def run_package(project_root, reports_dir, export_rbd_csv, backend):
+    # Os protótipos não descartam registros nem replicam o off-by-one do C, ou
+    # seja equivalem ao modo corrigido. Comparar contra o modo craam acusaria
+    # divergência onde há só diferença de modo.
     command = [sys.executable, str(PROJECT_ROOT / "hats_report.py"),
                "--project-root", str(project_root), "--reports-dir", str(reports_dir),
-               "--export-csv", "--backend", backend]
+               "--modo", "corrigido", "--export-csv", "--backend", backend]
     if export_rbd_csv:
         command.append("--export-rbd-csv")
     return subprocess.run(command, capture_output=True, text=True)
@@ -150,7 +153,7 @@ def main():
         if result.returncode != 0:
             print("O pacote falhou:\n{}".format(result.stderr))
             return 1
-        print("pacote hats (backend {}): ok".format(args.backend))
+        print("pacote hats (backend {}, modo corrigido): ok".format(args.backend))
 
         for version in args.versions:
             print()

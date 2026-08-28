@@ -147,14 +147,7 @@ que desloca o início da janela deslizante. Como `559 = 17×32 + 15`, a defasage
 não é múltipla do passo, e as duas grades de janelas ficam separadas por 15
 amostras: nenhuma janela nossa cai no mesmo instante que uma dele.
 
-Para alinhar:
-
-```bash
-make run-alinhado
-```
-
-Roda o nosso replicando o mesmo descarte, em `Reports/alinhado/`. Aí as janelas
-coincidem e dá para confrontar husec por husec:
+No modo `craam`, que é o padrão, o descarte é reproduzido e as janelas coincidem:
 
 ```
        husec               CRAAM               NOSSO     dif rel
