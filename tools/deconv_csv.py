@@ -73,7 +73,7 @@ def from_craam(day, hour, xml_dir, day_dir, upstream_dir, fft_program):
     return rows, "HATS.py {}".format(HATS.__version__), h.rbd.MetaData.get("N_Records_Deleted", 0)
 
 
-def from_ours(day, hour, xml_dir, day_dir, drop_before_hour):
+def from_ours(day, hour, xml_dir, day_dir, drop_before_hour, replicar_craam):
     from hats import backends, constants, schema as schema_module
 
     backend_name, analyser, _exporter = backends.resolve("auto")
@@ -90,13 +90,16 @@ def from_ours(day, hour, xml_dir, day_dir, drop_before_hour):
         "bin_mode": "reference",
         "record_limit": None,
         "drop_before_hour": drop_before_hour,
+        "goertzel_c_legacy": replicar_craam,
     })
     if "_deconv" not in result:
         raise SystemExit("Nenhuma janela demodulada — o arquivo é curto demais?")
 
     husecs, amplitudes, _date = result["_deconv"]
     dropped = result["integrity"].get("records_dropped_before_hour", 0)
-    return list(zip(husecs, amplitudes)), "pacote hats, backend {}".format(backend_name), dropped
+    origem = "pacote hats, backend {}{}".format(
+        backend_name, " (replicando o off-by-one do CRAAM)" if replicar_craam else "")
+    return list(zip(husecs, amplitudes)), origem, dropped
 
 
 def main():
@@ -112,6 +115,9 @@ def main():
     parser.add_argument("--fft-program", default=None)
     parser.add_argument("--decimals", type=int, default=6,
                         help="Casas decimais na amplitude. Use -1 para precisão total.")
+    parser.add_argument("--replicar-craam", dest="replicar_craam", action="store_true",
+                        help="Modo 'nosso': reproduz o off-by-one da recursão de Goertzel do "
+                             "windowed_dft.c, para a saída ficar idêntica à da referência.")
     parser.add_argument("--sem-descarte", action="store_true",
                         help="Modo 'nosso': não reproduz o descarte do HATS.py. A saída deixa "
                              "de ser comparável linha a linha.")
@@ -129,7 +135,8 @@ def main():
             raise SystemExit("HATS_fft não encontrado em {}.\nRode: make setup-reference".format(fft_program))
         rows, origin, dropped = from_craam(args.day, args.hour, xml_dir, day_dir, upstream_dir, fft_program)
     else:
-        rows, origin, dropped = from_ours(args.day, args.hour, xml_dir, day_dir, not args.sem_descarte)
+        rows, origin, dropped = from_ours(args.day, args.hour, xml_dir, day_dir,
+                                          not args.sem_descarte, args.replicar_craam)
 
     count = write_csv(rows, destination, decimals)
     print("  origem     : {}".format(origin))

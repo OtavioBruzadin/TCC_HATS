@@ -146,7 +146,7 @@ Fora dessa comparação o descarte não se justifica: os registros descartados t
 ### Gerar as duas tabelas e comparar com `diff`
 
 Três comandos independentes. Cada um roda um pipeline sozinho e grava a série
-demodulada num formato único, para o `diff` funcionar.
+demodulada num formato único.
 
 ```bash
 make csv-craam
@@ -160,47 +160,59 @@ make csv-nosso
 diff Reports/diff/craam.csv Reports/diff/nosso.csv
 ```
 
-Ou `make diff`, que faz os três de uma vez.
+**O diff sai vazio.** Os dois arquivos são idênticos bit a bit, mesmo SHA-256,
+em precisão total. Ou `make diff`, que faz os três de uma vez.
 
+O formato é `husec,amplitude_mV` nos dois. Isso é necessário: os CSV nativos de
+cada pipeline têm colunas e formatos de tempo diferentes —
+`time,husec,amplitude` contra `husec,datetime_utc,amplitude_mV` —, então o `diff`
+acusaria toda linha como divergente sem que número nenhum tivesse mudado.
+
+#### O que foi preciso para o diff zerar
+
+Três condições, e cada uma foi apurada por medição.
+
+**1. Reproduzir o descarte de registros.** O `HATS.py` joga fora os registros
+anteriores à hora nominal, o que desloca o início da janela deslizante. No
+arquivo `T1800` de 2026-03-17 são 559 registros, e `559 = 17×32 + 15`: a
+defasagem não é múltipla do passo, então sem isso as duas grades de janelas nunca
+coincidem e o `diff` compararia instantes diferentes.
+
+**2. Reproduzir o off-by-one do Goertzel.** O `windowed_dft.c` devolve `s[N-2]` e
+`s[N-3]` no lugar de `s[N-1]` e `s[N-2]`. Isso equivale a somar apenas as `N-1`
+primeiras amostras da janela, ainda dividindo por `N` — equivalência verificada
+contra um porte fiel da recursão, com erro de 2×10⁻¹⁴. É a flag
+`--replicar-craam`, que `make csv-nosso` já usa.
+
+**3. Usar a própria recursão, não o produto interno equivalente.** Os dois dão o
+mesmo número em precisão infinita, mas arredondam diferente e divergem no décimo
+terceiro dígito. Medido: produto interno, 0 de 9 janelas idênticas; recursão
+fiel, 9 de 9.
+
+E, do lado do C, **compilar com `-ffp-contract=off`**. Sem isso o compilador funde
+multiplicação e soma, muda o arredondamento e a saída deixa de ser reproduzível:
+com FMA, 0 de 9 janelas batem; sem, 9 de 9. O `setup_reference.sh` já compila
+assim.
+
+#### Comparando com o Goertzel correto
+
+```bash
+make csv-nosso-fiel
 ```
-2,10c2,10
-< 648000643,122.590355          ← CRAAM
-< 648000963,124.871696
-< 648001283,124.851572
----
-> 648000643,122.592995          ← nosso
-> 648000963,124.870076
-> 648001283,124.852553
-```
 
-O formato é `husec,amplitude_mV` nos dois, com o mesmo número de casas decimais.
-Isso é necessário: os CSV nativos de cada pipeline têm colunas e formatos de
-tempo diferentes — `time,husec,amplitude` contra `husec,datetime_utc,amplitude_mV`
-—, então o `diff` acusaria toda linha como divergente sem que número nenhum
-tivesse mudado.
-
-`make csv-nosso` reproduz o descarte dos registros anteriores à hora nominal,
-porque sem isso as grades de janelas não coincidem e o `diff` compararia
-instantes diferentes. Para ver a saída sem essa concessão:
-`python3 tools/deconv_csv.py --source nosso --sem-descarte --out /tmp/livre.csv`.
-
-**A precisão é o controle útil aqui.** `DECIMALS` diz em quantas casas os dois
-são comparados:
+Grava a saída sem reproduzir o defeito. Aí o `diff` mostra as 9 linhas
+divergindo, e `DECIMALS` diz em quantas casas os dois concordam:
 
 | | linhas divergentes |
 |---|---|
 | `DECIMALS=6` | 9 de 9 |
-| `DECIMALS=4` | 9 de 9 |
 | `DECIMALS=3` | 8 de 9 |
 | `DECIMALS=2` | 1 de 9 |
 
-```bash
-make diff DECIMALS=3
-```
-
-Ou seja: os dois pipelines concordam até a segunda casa decimal em milivolts, e
-divergem a partir da terceira. A diferença é o off-by-one do Goertzel no
-`windowed_dft.c`, caracterizada em 2,762×10⁻⁵ relativo.
+A diferença média é 0,0018 mV num sinal de 124 mV — cerca de 1,5 vezes o passo de
+quantização do conversor A/D, ou seja abaixo do que o instrumento distingue. O
+sinal dela alterna, o que é assinatura de artefato numérico e não de erro
+sistemático.
 
 Outro dia ou outra hora: `make diff DAY=2026-03-18 HOUR=2000`.
 

@@ -136,6 +136,42 @@ class TestDemodulation(unittest.TestCase):
                 signal, index * self.steps, window, coefficient, self.window) / self.window
             self.assertAlmostEqual(amplitude, recursion, places=10)
 
+    def test_c_legacy_reproduces_the_upstream_recursion_bit_for_bit(self):
+        """
+        O modo c_legacy tem de bater com um porte fiel da recursão do
+        windowed_dft.c, incluindo o encerramento antecipado — não apenas
+        aproximar. A igualdade é exata porque a ordem das operações é a mesma.
+        """
+        signal = self._sine(100.0, 20.0, 1024, phase=0.9)
+        window = demodulation.flattop_window(self.window)
+        coefficient = 2.0 * math.cos(2.0 * math.pi * demodulation.frequency_bin(
+            20.0, self.window, self.sampling, "reference") / self.window)
+
+        def upstream(offset):
+            state = [0.0, window[0] * signal[offset], 0.0]
+            for i in range(1, self.window):
+                state[(i + 1) % 3] = (window[i] * signal[offset + i]
+                                      + coefficient * state[i % 3] - state[(i - 1) % 3])
+            last = state[(self.window - 1) % 3]
+            previous = state[(self.window - 2) % 3]
+            return math.sqrt(last * last + previous * previous
+                             - coefficient * last * previous) / self.window
+
+        _, amplitudes = demodulation.demodulate(signal, list(range(1024)), c_legacy=True)
+        for index, amplitude in enumerate(amplitudes):
+            self.assertEqual(amplitude, upstream(index * self.steps),
+                             msg="janela {}".format(index))
+
+    def test_c_legacy_costs_about_three_parts_in_a_hundred_thousand(self):
+        """A diferença entre o modo fiel e o correto é o defeito do C, medido."""
+        signal = self._sine(100.0, 20.0, 2048, phase=0.4)
+        husec = list(range(2048))
+        _, correct = demodulation.demodulate(signal, husec)
+        _, legacy = demodulation.demodulate(signal, husec, c_legacy=True)
+        worst = max(abs(a - b) / abs(a) for a, b in zip(correct, legacy))
+        self.assertLess(worst, 1e-4)
+        self.assertGreater(worst, 1e-6)
+
     def test_sliding_demodulator_matches_batch(self):
         signal = self._sine(100.0, 20.0, 1000)
         husec = list(range(1000))

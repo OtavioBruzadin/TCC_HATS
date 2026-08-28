@@ -27,6 +27,20 @@ import operator
 
 from hats import constants
 
+C_LEGACY_NOTE = (
+    "Reproduz o encerramento antecipado da recursão de Goertzel no "
+    "windowed_dft.c do CRAAM, que devolve s[N-2] e s[N-3] no lugar de s[N-1] e "
+    "s[N-2]. Isso equivale a somar apenas as N-1 primeiras amostras da janela, "
+    "ainda dividindo por N — verificado contra um porte fiel da recursão em C, "
+    "com erro relativo de 2e-14. O resultado é numericamente pior, e existe só "
+    "para reproduzir a saída da referência.\n\n"
+    "Para igualdade BIT A BIT, além disto é preciso (a) usar a própria recursão, "
+    "não o produto interno equivalente, porque a ordem das operações muda o "
+    "arredondamento, e (b) compilar o HATS_fft com -ffp-contract=off, senão o "
+    "compilador funde multiplicação e soma e altera o último dígito. Com as duas "
+    "condições, as 9 janelas do arquivo de teste saem idênticas, erro 0.0."
+)
+
 
 def flattop_window(length):
     """Janela flat-top simétrica, ISO 18431-1 tipo 0, como no windowed_dft.c."""
@@ -60,23 +74,30 @@ def frequency_bin(target_frequency, window_size, sampling_frequency, bin_mode):
     return float(math.floor(exact))
 
 
-def projection_vectors(window_size, target_frequency, sampling_frequency, bin_mode):
+def projection_vectors(window_size, target_frequency, sampling_frequency, bin_mode,
+                       c_legacy=False):
     """
     Janela flat-top já multiplicada pelos twiddles de análise.
 
     Deixa a amplitude de cada janela como dois produtos internos, que
     `sum(map(mul, ...))` avalia em C em vez de no interpretador. Cerca de três
     vezes mais rápido que a recursão, com concordância de 3e-14.
+
+    Com `c_legacy`, o último coeficiente é zerado. Ver C_LEGACY_NOTE.
     """
     window = flattop_window(window_size)
     angle = 2.0 * math.pi * frequency_bin(
         target_frequency, window_size, sampling_frequency, bin_mode) / window_size
     cosines = [window[i] * math.cos(angle * i) for i in range(window_size)]
     sines = [window[i] * math.sin(angle * i) for i in range(window_size)]
+    if c_legacy and window_size:
+        cosines[-1] = 0.0
+        sines[-1] = 0.0
     return cosines, sines
 
 
-def numpy_projection(window_size, target_frequency, sampling_frequency, bin_mode):
+def numpy_projection(window_size, target_frequency, sampling_frequency, bin_mode,
+                     c_legacy=False):
     """Mesma projeção, como vetor complexo, para a multiplicação matriz-vetor."""
     import numpy as np
 
@@ -89,7 +110,10 @@ def numpy_projection(window_size, target_frequency, sampling_frequency, bin_mode
         - 0.3880 * np.cos(6.0 * np.pi * indices / denominator)
         + 0.0322 * np.cos(8.0 * np.pi * indices / denominator))
     k = frequency_bin(target_frequency, window_size, sampling_frequency, bin_mode)
-    return window * np.exp(-1j * 2.0 * np.pi * k * indices / window_size)
+    projection = window * np.exp(-1j * 2.0 * np.pi * k * indices / window_size)
+    if c_legacy and window_size:
+        projection[-1] = 0.0
+    return projection
 
 
 def window_count(total_samples, window_size, steps):
@@ -121,6 +145,24 @@ def goertzel_amplitude(signal, offset, window, coefficient, window_size):
                          - coefficient * current * previous))
 
 
+def goertzel_amplitude_c_legacy(signal, offset, window, coefficient, window_size):
+    """
+    Porte fiel da recursão do windowed_dft.c, incluindo o encerramento antecipado.
+
+    A ordem das operações é a mesma do C, o que importa: o produto interno
+    equivalente dá o mesmo número em precisão infinita, mas arredonda diferente e
+    diverge no décimo terceiro dígito. Ver C_LEGACY_NOTE.
+    """
+    state = [0.0, window[0] * signal[offset], 0.0]
+    for index in range(1, window_size):
+        state[(index + 1) % 3] = (window[index] * signal[offset + index]
+                                  + coefficient * state[index % 3]
+                                  - state[(index - 1) % 3])
+    last = state[(window_size - 1) % 3]
+    previous = state[(window_size - 2) % 3]
+    return math.sqrt(last * last + previous * previous - coefficient * last * previous)
+
+
 class SlidingDemodulator(object):
     """
     Demodula janelas conforme as amostras chegam, sem guardar o arquivo inteiro.
@@ -131,13 +173,18 @@ class SlidingDemodulator(object):
     """
 
     def __init__(self, window_size, steps, target_frequency, sampling_frequency,
-                 bin_mode, max_windows):
+                 bin_mode, max_windows, c_legacy=False):
         self.window_size = window_size
         self.steps = steps
         self.half = window_size // 2
         self.max_windows = max_windows
+        self.c_legacy = c_legacy
         self.cosines, self.sines = projection_vectors(
-            window_size, target_frequency, sampling_frequency, bin_mode)
+            window_size, target_frequency, sampling_frequency, bin_mode, c_legacy)
+        if c_legacy:
+            self.window = flattop_window(window_size)
+            self.coefficient = 2.0 * math.cos(2.0 * math.pi * frequency_bin(
+                target_frequency, window_size, sampling_frequency, bin_mode) / window_size)
         self.amplitudes = []
         self.husecs = []
         self._signal = []
@@ -159,9 +206,13 @@ class SlidingDemodulator(object):
 
         while len(self.amplitudes) < self.max_windows and self._next_start <= last_start:
             local = self._next_start - self._consumed
-            piece = self._signal[local:local + window_size]
-            self.amplitudes.append(hypot(sum(map(multiply, cosines, piece)),
-                                         sum(map(multiply, sines, piece))) / window_size)
+            if self.c_legacy:
+                self.amplitudes.append(goertzel_amplitude_c_legacy(
+                    self._signal, local, self.window, self.coefficient, window_size) / window_size)
+            else:
+                piece = self._signal[local:local + window_size]
+                self.amplitudes.append(hypot(sum(map(multiply, cosines, piece)),
+                                             sum(map(multiply, sines, piece))) / window_size)
             self.husecs.append(self._husec[local + self.half])
             self._next_start += self.steps
 
@@ -175,7 +226,7 @@ class SlidingDemodulator(object):
 def demodulate(signal, husec, window_size=constants.WINDOW_SIZE, steps=constants.STEPS,
                target_frequency=constants.TARGET_FREQUENCY,
                sampling_frequency=constants.SAMPLING_FREQUENCY,
-               bin_mode="reference"):
+               bin_mode="reference", c_legacy=False):
     """
     Demodula uma série já inteira em memória.
 
@@ -189,18 +240,27 @@ def demodulate(signal, husec, window_size=constants.WINDOW_SIZE, steps=constants
         return [], []
 
     cosines, sines = projection_vectors(window_size, target_frequency,
-                                        sampling_frequency, bin_mode)
+                                        sampling_frequency, bin_mode, c_legacy)
     multiply = operator.mul
     hypot = math.hypot
     half = window_size // 2
     samples = signal if isinstance(signal, list) else list(signal)
 
+    if c_legacy:
+        window = flattop_window(window_size)
+        coefficient = 2.0 * math.cos(2.0 * math.pi * frequency_bin(
+            target_frequency, window_size, sampling_frequency, bin_mode) / window_size)
+
     amplitudes = []
     husecs = []
     for index in range(count):
         offset = index * steps
-        piece = samples[offset:offset + window_size]
-        amplitudes.append(hypot(sum(map(multiply, cosines, piece)),
-                                sum(map(multiply, sines, piece))) / window_size)
+        if c_legacy:
+            amplitudes.append(goertzel_amplitude_c_legacy(
+                samples, offset, window, coefficient, window_size) / window_size)
+        else:
+            piece = samples[offset:offset + window_size]
+            amplitudes.append(hypot(sum(map(multiply, cosines, piece)),
+                                    sum(map(multiply, sines, piece))) / window_size)
         husecs.append(husec[offset + half])
     return husecs, amplitudes

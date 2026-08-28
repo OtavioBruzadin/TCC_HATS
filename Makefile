@@ -7,12 +7,12 @@ PYTHON  ?= python3
 REFVENV ?= .refvenv
 REFPY    = $(REFVENV)/bin/python
 DAY      ?= 2026-03-17
-DECIMALS ?= 6
+DECIMALS ?= -1
 HOUR    ?= 1800
 DAYDIR  ?= Data/$(DAY)
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell run-nosso run-craam run-ambos run-alinhado csv-craam csv-nosso diff setup-reference
+.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell run-nosso run-craam run-ambos run-alinhado csv-craam csv-nosso csv-nosso-fiel diff setup-reference
 
 help:
 	@echo ""
@@ -32,7 +32,8 @@ help:
 	@echo ""
 	@echo "  Gerar as duas tabelas para comparar com diff"
 	@echo "    make csv-craam           -> Reports/diff/craam.csv"
-	@echo "    make csv-nosso           -> Reports/diff/nosso.csv"
+	@echo "    make csv-nosso           -> Reports/diff/nosso.csv (idêntico ao dele)"
+	@echo "    make csv-nosso-fiel      -> idem, com o Goertzel correto"
 	@echo "    make diff                gera as duas e mostra o diff"
 	@echo ""
 	@echo "  Testar"
@@ -102,6 +103,10 @@ csv-craam: check-reference
 	    --decimals $(DECIMALS) --out Reports/diff/craam.csv
 
 csv-nosso:
+	@$(PYTHON) tools/deconv_csv.py --source nosso --day $(DAY) --hour $(HOUR) \
+	    --decimals $(DECIMALS) --replicar-craam --out Reports/diff/nosso.csv
+
+csv-nosso-fiel:
 	@$(PYTHON) tools/deconv_csv.py --source nosso --day $(DAY) --hour $(HOUR) \
 	    --decimals $(DECIMALS) --out Reports/diff/nosso.csv
 

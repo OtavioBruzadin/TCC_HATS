@@ -63,7 +63,10 @@ static inline void fftw_destroy_plan(fftw_plan p) { (void)p; }
 #endif
 STUB
 
-(cd "$BUILD" && cc -O2 -I. windowed_dft.c HATS_fft.c -lm -o HATS_fft 2>/dev/null)
+# -ffp-contract=off desliga a fusão de multiplicação e soma. Sem isso o
+# compilador altera o arredondamento e a saída do C deixa de ser reproduzível
+# bit a bit — verificado: com FMA, 0 de 9 janelas batem; sem, 9 de 9.
+(cd "$BUILD" && cc -O2 -ffp-contract=off -I. windowed_dft.c HATS_fft.c -lm -o HATS_fft 2>/dev/null)
 cp "$BUILD/HATS_fft" "$UPSTREAM/HATS_fft"
 chmod +x "$UPSTREAM/HATS_fft"
 

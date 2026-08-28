@@ -141,6 +141,7 @@ def _demodulation_report(options, husecs, amplitudes, golay_field, date_str, met
         "bin_exact": options["target_frequency"] * window_size / options["sampling_frequency"],
         "bin_used": used_bin,
         "bin_frequency_hz": used_bin * options["sampling_frequency"] / window_size,
+        "goertzel_c_legacy": bool(options.get("goertzel_c_legacy", False)),
         "windows": len(amplitudes),
         "unit": golay_field.get("converted_unit") if golay_field else None,
         "amplitude": statistics.summarize(amplitudes),
@@ -188,7 +189,8 @@ def analyse_stdlib(path, schema, options):
         if windows:
             demodulator = demodulation.SlidingDemodulator(
                 options["window_size"], options["steps"], options["target_frequency"],
-                options["sampling_frequency"], options["bin_mode"], windows)
+                options["sampling_frequency"], options["bin_mode"], windows,
+                options.get("goertzel_c_legacy", False))
 
     total = 0
     for columns, chunk_count in records.iter_columns(path, schema, options["record_limit"], offset=dropped):
@@ -219,6 +221,12 @@ def analyse_stdlib(path, schema, options):
 
 def analyse_numpy(path, schema, options):
     """Mesma análise, vetorizada. Escolhida automaticamente quando numpy existe."""
+    if options.get("goertzel_c_legacy"):
+        # A igualdade bit a bit com o C depende da ordem das operações da
+        # recursão, que não tem equivalente vetorizado. O modo é de comparação,
+        # não de produção, então o caminho lento serve.
+        return analyse_stdlib(path, schema, options)
+
     import numpy as np
     from numpy.lib.stride_tricks import sliding_window_view
 
@@ -240,7 +248,8 @@ def analyse_numpy(path, schema, options):
 
     if demodulating:
         projection = demodulation.numpy_projection(
-            window_size, options["target_frequency"], options["sampling_frequency"], options["bin_mode"])
+            window_size, options["target_frequency"], options["sampling_frequency"],
+            options["bin_mode"], options.get("goertzel_c_legacy", False))
         half = window_size // 2
         amplitude_blocks = []
         husec_blocks = []

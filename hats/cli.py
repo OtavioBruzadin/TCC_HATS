@@ -43,6 +43,10 @@ def build_parser():
     processing.add_argument("--fft-bin-mode", choices=["reference", "exact"], default="reference",
                             help="'reference' reproduz o floor() do HATS_fft.c; 'exact' usa o "
                                  "bin fracionário e elimina o scalloping dependente de fase.")
+    processing.add_argument("--replicar-craam", dest="replicar_craam", action="store_true",
+                            help="Reproduz o off-by-one da recursão de Goertzel do "
+                                 "windowed_dft.c, para a saída ficar idêntica à do CRAAM. "
+                                 "Numericamente pior; use só para comparação.")
     processing.add_argument("--backend", choices=["auto", "numpy", "stdlib"], default="auto")
 
     info = parser.add_argument_group("informação")
@@ -84,6 +88,7 @@ def main(argv=None):
         "bin_mode": args.fft_bin_mode,
         "record_limit": args.record_limit,
         "drop_before_hour": args.drop_before_hour,
+        "goertzel_c_legacy": args.replicar_craam,
     }
     settings = {
         "options": options,
