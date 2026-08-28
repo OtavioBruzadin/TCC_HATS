@@ -24,6 +24,9 @@ def build_parser():
     output.add_argument("--export-rbd-csv", action="store_true",
                         help="Também exporta o CSV do sinal bruto de 1 kHz: ~3,6 M linhas "
                              "e ~767 MB por hora de dados.")
+    output.add_argument("--export-craam-csv", action="store_true",
+                        help="Grava, em Reports/craam-csv/, os mesmos três CSV que o "
+                             "toCSV() do HATS.py grava — byte a byte iguais aos dele.")
     output.add_argument("--csv-limit", type=int, default=None, help="Máximo de linhas por CSV.")
     output.add_argument("--sample-count", type=int, default=5,
                         help="Registros mostrados de cada ponta do arquivo no JSON.")
@@ -90,6 +93,7 @@ def main(argv=None):
         "sample_count": args.sample_count,
         "export_csv": args.export_csv,
         "export_rbd_csv": args.export_rbd_csv,
+        "export_craam_csv": args.export_craam_csv,
         "csv_limit": args.csv_limit,
     }
     schemas = {

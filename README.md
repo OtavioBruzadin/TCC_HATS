@@ -17,12 +17,43 @@ make diff
 ```
 
 ```
-diff Reports/diff/craam.csv Reports/diff/nosso.csv
+diff -r Reports/craam Reports/nosso/craam-csv
 ----------------------------------------------------------------
-(sem diferenças)
+(sem diferenças — as tabelas são idênticas byte a byte)
 ```
 
-Os dois arquivos têm o mesmo SHA-256.
+Não é só a série demodulada: são os **três arquivos** que o `toCSV()` do
+`HATS.py` grava, com os mesmos nomes, as mesmas colunas na mesma ordem, os
+mesmos valores e a mesma formatação. Mesmo SHA-256 nos três.
+
+| arquivo | conteúdo | linhas |
+|---|---|---|
+| `-deconv.csv` | `time,husec,amplitude` | 9 |
+| `-rbd_cal.csv` | `golay,chopper,temp_hics,temp_env,temp_golay` | 441 |
+| `-rbd_adcu.csv` | o apontamento — ver abaixo | 1000 |
+
+O `make run` grava esses três em `Reports/craam-csv/`, ao lado dos relatórios
+próprios do pacote.
+
+### Detalhes que a reprodução exigiu
+
+Três coisas não saem de graça, e valem registro porque nenhuma é óbvia.
+
+**O carimbo de tempo trunca.** O `husec2dt()` da referência calcula os
+microssegundos em ponto flutuante: para o husec 648000643 o valor exato seria
+64300 µs, mas `643/1e4 = 0.0643` e `0.0643*1e6 = 64299.999999999993`, que `int()`
+leva a 64299. A referência grava `.064299`, então
+`timebase.craam_datetime()` reproduz esse caminho em vez de calcular certo.
+
+**O nome de arquivo está repetido no `toCSV()`.** As linhas 368 e 387 usam ambas
+`rootname+'-rbd_adcu.csv'`: primeiro grava o sinal bruto do detector, depois o
+apontamento por cima. O conteúdo final desse arquivo é o **apontamento**, e os
+dados brutos não sobrevivem à chamada. Isso é reproduzido; o que não é
+reproduzido é a escrita descartada, já que o resultado é o mesmo e custaria
+centenas de MB por hora.
+
+**Os floats saem no repr de round-trip mais curto**, que é o que o Python produz
+nativamente — `50.690450199999994`, não `50.69045020`.
 
 ## Fidelidade, e o que ela custa
 

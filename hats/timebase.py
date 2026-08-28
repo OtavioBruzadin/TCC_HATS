@@ -92,3 +92,23 @@ def hour_from_filename(path):
     if "T" in name:
         return name.split("T", 1)[1][:4]
     return None
+
+
+def craam_datetime(date_str, husec):
+    """
+    Porte fiel do husec2dt() do HATS.py, para reproduzir os CSV dele.
+
+    Não é a mesma coisa que datetime_from_husec(): o cálculo dos microssegundos
+    passa por ponto flutuante e trunca. Para husec 648000643 o valor exato seria
+    64300 µs, mas 643/1e4 = 0.0643 e 0.0643*1e6 = 64299.999999999993, que int()
+    leva a 64299. A referência grava .064299, então é isso que precisa sair aqui.
+    """
+    from datetime import datetime as _datetime
+
+    year, month, day = int(date_str[0:4]), int(date_str[5:7]), int(date_str[8:10])
+    hours = int(husec // constants.HUSEC_PER_HOUR)
+    minutes = int((husec % constants.HUSEC_PER_HOUR) // constants.HUSEC_PER_MINUTE)
+    seconds = ((husec % constants.HUSEC_PER_HOUR) % constants.HUSEC_PER_MINUTE) / 1.0E+04
+    whole_seconds = int(seconds)
+    microseconds = int((seconds - whole_seconds) * 1e6)
+    return _datetime(year, month, day, hours, minutes, whole_seconds, microseconds)

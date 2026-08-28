@@ -38,6 +38,7 @@ def ensure_structure(project_root, data_dir="Data", reports_dir="Reports", xml_d
         "reports_dir": project_root / reports_dir,
         "json_dir": project_root / reports_dir / "json",
         "csv_dir": project_root / reports_dir / "csv",
+        "craam_csv_dir": project_root / reports_dir / "craam-csv",
         "xml_dir": project_root / xml_dir,
     }
     for key, path in paths.items():

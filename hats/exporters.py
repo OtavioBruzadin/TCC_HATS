@@ -156,3 +156,111 @@ def export_ws_csv(path, out_csv):
         for row in rows:
             writer.writerow([row["time"], row["station_code"], row["temperature_c"],
                              row["humidity"], row["pressure_hpa"]])
+
+
+# ---------------------------------------------------------------------------
+# Reprodução dos CSV do HATS.py
+# ---------------------------------------------------------------------------
+#
+# O toCSV() da referência grava três arquivos com pandas. Reproduzi-los exige
+# cuidado com detalhes que não são óbvios:
+#
+#   - os nomes das colunas e a ordem vêm dos dtypes das estruturas dele, não do
+#     XML: o deconv sai como time,husec,amplitude;
+#
+#   - os carimbos de tempo usam o husec2dt() dele, cujo cálculo de microssegundos
+#     passa por ponto flutuante e trunca — ver timebase.craam_datetime();
+#
+#   - os floats saem com o repr de round-trip mais curto, que é o que o Python
+#     produz nativamente;
+#
+#   - e o arquivo '-rbd_adcu.csv' recebe DUAS escritas na mesma chamada: primeiro
+#     os dados brutos do detector, depois o apontamento por cima, porque o nome
+#     está repetido no código. O conteúdo final é o apontamento, e os dados
+#     brutos não sobrevivem. O comportamento é reproduzido; escrever e descartar
+#     não, já que o resultado é o mesmo e custaria centenas de MB por hora.
+
+
+def _craam_cell(value):
+    """Formata um valor como o pandas faria ao gravar o CSV."""
+    if isinstance(value, float):
+        return repr(value)
+    return str(value)
+
+
+def _write_craam_table(destination, headers, rows):
+    with destination.open("w", newline="", encoding="utf-8") as out:
+        out.write(",".join(headers) + "\n")
+        for row in rows:
+            out.write(",".join(_craam_cell(value) for value in row) + "\n")
+
+
+def export_craam_csv(destination_dir, rootname, rbd_path, rbd_schema,
+                     aux_path, aux_schema, deconv, limit=None):
+    """
+    Grava os mesmos três CSV que o toCSV() do HATS.py grava.
+
+    Devolve a lista de arquivos escritos.
+    """
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+
+    date_str = timebase.date_from_filename(rbd_path)
+    index_of = schema_module.field_index(rbd_schema)
+    converted = schema_module.converted_fields(rbd_schema)
+    calibrated_fields = [f for f in converted if f.get("convert") == "yes"]
+
+    hour = timebase.hour_from_filename(rbd_path)
+    threshold = int(hour[:2]) * constants.HUSEC_PER_HOUR if hour and hour[:2].isdigit() else None
+    offset = records.first_index_at_or_after(rbd_path, rbd_schema, "husec", threshold) if threshold else 0
+
+    # -rbd_cal.csv: os canais calibrados, na ordem em que a referência os monta
+    raw_rows = []
+    calibrated_rows = []
+    for values in records.iter_records(rbd_path, rbd_schema, limit, offset=offset):
+        decoded = {}
+        for field in converted:
+            value = values[index_of[field["name"]]]
+            decoded[field["name"]] = (calibration.decode_ad7770(value)
+                                      if field.get("origin") == "ad7770" else value)
+        raw_rows.append([decoded.get(f["name"], values[index_of[f["name"]]])
+                         for f in rbd_schema["fields"]])
+        calibrated_rows.append([decoded[f["name"]] * f.get("slope", 1.0) + f.get("offset", 0.0)
+                                for f in calibrated_fields])
+
+    if calibrated_rows:
+        target = destination_dir / "{}-rbd_cal.csv".format(rootname)
+        _write_craam_table(target, [f["name"] for f in calibrated_fields], calibrated_rows)
+        written.append(target)
+
+    # -deconv.csv: time, husec, amplitude
+    if deconv:
+        husecs, amplitudes, _date = deconv
+        if len(amplitudes):
+            target = destination_dir / "{}-deconv.csv".format(rootname)
+            _write_craam_table(
+                target, ["time", "husec", "amplitude"],
+                ([timebase.craam_datetime(date_str, int(h)), int(h), float(a)]
+                 for h, a in zip(husecs, amplitudes)))
+            written.append(target)
+
+    # -rbd_adcu.csv: o apontamento sobrescreve os dados brutos, como na referência
+    aux_rows = []
+    if aux_path and aux_path.exists():
+        aux_index = schema_module.field_index(aux_schema)
+        aux_date = timebase.date_from_filename(aux_path)
+        for values in records.iter_records(aux_path, aux_schema, limit):
+            row = [values[aux_index[f["name"]]] for f in aux_schema["fields"]]
+            row.append(timebase.craam_datetime(aux_date, values[aux_index["husec"]]))
+            aux_rows.append(row)
+
+    target = destination_dir / "{}-rbd_adcu.csv".format(rootname)
+    if aux_rows:
+        headers = [f["name"] for f in aux_schema["fields"]] + ["time"]
+        _write_craam_table(target, headers, aux_rows)
+        written.append(target)
+    elif raw_rows:
+        _write_craam_table(target, [f["name"] for f in rbd_schema["fields"]], raw_rows)
+        written.append(target)
+
+    return written

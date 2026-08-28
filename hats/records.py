@@ -97,13 +97,15 @@ def iter_columns(path, schema, limit=None, chunk_records=constants.STDLIB_CHUNK_
             yield columns, count
 
 
-def iter_records(path, schema, limit=None, chunk_records=constants.STDLIB_CHUNK_RECORDS):
+def iter_records(path, schema, limit=None, chunk_records=constants.STDLIB_CHUNK_RECORDS, offset=0):
     """Percorre registro a registro, entregando a tupla desempacotada."""
     record_size = schema["record_size"]
     unpacker = struct.Struct(schema["struct_format"])
-    remaining = total_records(path, schema, limit)
+    remaining = max(0, total_records(path, schema, limit) - offset)
 
     with path.open("rb") as handle:
+        if offset:
+            handle.seek(offset * record_size)
         while remaining > 0:
             blob = handle.read(record_size * min(chunk_records, remaining))
             if not blob:

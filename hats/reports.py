@@ -198,6 +198,14 @@ def process_day(day_key, day_info, paths, schemas, settings):
             exporters.write_json(report, json_dir / name)
             hour_report["rbd"] = digest_rbd(report, name)
 
+            if deconv and settings.get("export_craam_csv"):
+                # Os mesmos três CSV que o toCSV() do HATS.py grava, byte a byte.
+                written = exporters.export_craam_csv(
+                    paths["craam_csv_dir"], "{}T{}".format(day_key, hour_key),
+                    files["rbd"], schemas["rbd"], files.get("aux"), schemas["aux"],
+                    deconv, settings["csv_limit"])
+                report["craam_csv"] = [path.name for path in written]
+
             if deconv and settings["export_csv"]:
                 exporters.export_deconv_csv(
                     deconv, csv_dir / "{}__{}__deconv.csv".format(day_key, hour_key),

@@ -37,7 +37,7 @@ cd "$OUT"
 "$REFVENV/bin/python" -c "
 import HATS
 h = HATS.hats('$DAY $HOUR')
-h.toCSV(rootname='$DAY-$HOUR')
+h.toCSV(rootname='${DAY}T${HOUR}')
 print('HATS.py {}'.format(HATS.__version__))
 print('  rData  {:>6} registros   ({} descartados antes da hora nominal)'.format(
       h.rbd.rData.shape[0], h.rbd.MetaData.get('N_Records_Deleted', 0)))
@@ -47,7 +47,7 @@ print('  aux    {:>6} registros'.format(h.aux.Data.shape[0]))
 
 echo
 echo "Gerado em $OUT"
-for f in "$OUT"/$DAY-$HOUR-*.csv; do
+for f in "$OUT"/${DAY}T${HOUR}-*.csv; do
     [ -e "$f" ] || continue
     printf "  %-40s %8s linhas\n" "$(basename "$f")" "$(( $(wc -l < "$f") - 1 ))"
 done

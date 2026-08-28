@@ -243,6 +243,40 @@ class TestCommandLine(TemporaryProject):
         self.assertEqual(digest["report_file"], "2026-03-17__1800__rbd_report.json")
         self.assertNotIn("sampled_records", digest)
 
+    def test_craam_csv_reproduces_the_reference_layout(self):
+        """
+        Os três arquivos do toCSV() da referência: nomes, colunas e ordem.
+
+        A igualdade byte a byte contra o HATS.py real é verificada por
+        `make diff`, que precisa do ambiente de referência; aqui fica travado o
+        que dá para travar sem ele.
+        """
+        reports = self._run("--export-craam-csv")
+        folder = reports / "craam-csv"
+        names = sorted(path.name for path in folder.glob("*.csv"))
+        self.assertEqual(names, ["2026-03-17T1800-deconv.csv",
+                                 "2026-03-17T1800-rbd_adcu.csv",
+                                 "2026-03-17T1800-rbd_cal.csv"])
+
+        deconv = (folder / "2026-03-17T1800-deconv.csv").read_text(encoding="utf-8")
+        self.assertTrue(deconv.startswith("time,husec,amplitude\n"))
+
+        calibrated = (folder / "2026-03-17T1800-rbd_cal.csv").read_text(encoding="utf-8")
+        self.assertTrue(calibrated.startswith("golay,chopper,temp_hics,temp_env,temp_golay\n"))
+
+        # O toCSV() grava o apontamento por cima do CSV do sinal bruto: os dois
+        # usam o nome '-rbd_adcu.csv'. O conteúdo final é o apontamento.
+        adcu = (folder / "2026-03-17T1800-rbd_adcu.csv").read_text(encoding="utf-8")
+        self.assertTrue(adcu.startswith("husec,jd,sid,elevation,azimuth,"))
+
+    def test_craam_timestamps_truncate_like_the_reference(self):
+        """O husec2dt() da referência trunca os microssegundos em ponto flutuante."""
+        from hats import timebase
+        self.assertEqual(str(timebase.craam_datetime("2026-03-17", 648000643)),
+                         "2026-03-17 18:00:00.064299")
+        self.assertEqual(str(timebase.craam_datetime("2026-03-17", 648000000)),
+                         "2026-03-17 18:00:00")
+
     def test_csv_files_are_utf8(self):
         reports = self._run("--export-csv")
         for path in (reports / "csv").glob("*.csv"):

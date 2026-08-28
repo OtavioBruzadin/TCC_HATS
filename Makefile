@@ -58,10 +58,10 @@ test:
 	$(PYTHON) -m unittest discover -s tests -t . -v
 
 run:
-	$(PYTHON) hats_report.py --export-csv
+	$(PYTHON) hats_report.py --export-csv --export-craam-csv
 
 run-full:
-	$(PYTHON) hats_report.py --export-csv --export-rbd-csv
+	$(PYTHON) hats_report.py --export-csv --export-craam-csv --export-rbd-csv
 
 clean:
 	rm -rf Reports
@@ -86,7 +86,7 @@ craam-shell: check-reference
 
 run-nosso:
 	@rm -rf Reports/nosso
-	$(PYTHON) hats_report.py --reports-dir Reports/nosso --export-csv --export-rbd-csv
+	$(PYTHON) hats_report.py --reports-dir Reports/nosso --export-csv --export-craam-csv
 	@echo ""
 	@echo "  Reports/nosso/"
 	@find Reports/nosso -type f | sort | sed 's|^|    |'
@@ -103,11 +103,19 @@ csv-nosso:
 	@$(PYTHON) tools/deconv_csv.py --source nosso --day $(DAY) --hour $(HOUR) \
 	    --decimals $(DECIMALS) --out Reports/diff/nosso.csv
 
-diff: csv-craam csv-nosso
+# Compara TODAS as tabelas: os três CSV que o toCSV() da referência grava,
+# confrontados com os que este pipeline grava sob os mesmos nomes.
+diff: check-reference
+	@rm -rf Reports/craam Reports/nosso
+	@OUTDIR=$(CURDIR)/Reports/craam tools/craam_csv.sh $(DAY) $(HOUR) >/dev/null
+	@$(PYTHON) hats_report.py --reports-dir Reports/nosso --export-craam-csv \
+	    --day $(DAY) >/dev/null
 	@echo ""
-	@echo "  diff Reports/diff/craam.csv Reports/diff/nosso.csv"
+	@echo "  diff -r Reports/craam Reports/nosso/craam-csv"
 	@echo "  ----------------------------------------------------------------"
-	@diff Reports/diff/craam.csv Reports/diff/nosso.csv && echo "  (sem diferenças)" || true
+	@if diff -r Reports/craam Reports/nosso/craam-csv; then \
+	    echo "  (sem diferenças — as tabelas são idênticas byte a byte)"; \
+	 fi
 
 run-ambos: run-nosso run-craam
 	@echo ""
