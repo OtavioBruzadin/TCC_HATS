@@ -1,11 +1,48 @@
 # TCC_HATS
 
-Processamento e análise dos arquivos gerados pelo instrumento HATS
-(High Altitude THz Solar telescope — CRAAM/Mackenzie, instalado no OAFA, San Juan/AR).
+Processamento e análise dos dados do telescópio solar HATS
+(CRAAM/Mackenzie, instalado no OAFA, San Juan/AR).
 
 O HATS observa o Sol em 15 THz (20 µm). O detector é uma célula Golay, que só
 responde a sinal modulado: a radiação é picada por um chopper a 20 Hz, amostrada
 a 1 kHz, e a amplitude em 20 Hz é extraída por software — um lock-in digital.
+
+**Este pipeline reproduz o software original do CRAAM bit a bit.** É essa a
+afirmação que ele sustenta: uma reimplementação independente, reorganizada em
+módulos, com testes e cerca de dez vezes mais rápida, chegando exatamente ao
+mesmo resultado do código de referência.
+
+```bash
+make diff
+```
+
+```
+diff Reports/diff/craam.csv Reports/diff/nosso.csv
+----------------------------------------------------------------
+(sem diferenças)
+```
+
+Os dois arquivos têm o mesmo SHA-256.
+
+## Fidelidade, e o que ela custa
+
+Reproduzir exatamente significa reproduzir também os defeitos. Duas
+consequências, ambas deliberadas:
+
+- os registros anteriores à hora nominal são **descartados**, como na referência,
+  embora `sample` e `husec` sigam contínuos neles;
+- a recursão de Goertzel encerra um passo antes do devido, reproduzindo o
+  off-by-one do `windowed_dft.c`, o que custa cerca de 0,003% na amplitude.
+
+**As correções desses dois pontos estão no projeto irmão `TCC_HATS_corrigido`**,
+separado justamente porque mudam o resultado. Só faz sentido afirmar o que muda
+com elas depois de ter estabelecido que a reimplementação é fiel.
+
+O que **não** é sacrificado, porque não altera nenhum valor que a referência
+produz: a conversão da ascensão reta de horas para graus e das taxas de arcsec/s
+para graus/s, a marcação dos registros defasados do apontamento, o reparo dos
+carimbos corrompidos da estação meteorológica, e a estatística de arquivo
+inteiro. Todas são aditivas — acrescentam colunas e campos.
 
 ---
 
@@ -22,26 +59,12 @@ make run
 
 | comando | o que faz |
 |---|---|
-| `make run` | processa o `Data/` — **modo craam**, saída idêntica à da referência |
-| `make run-corrigido` | idem, com as correções apuradas na validação |
-| `make run-full` | como o `run`, incluindo o CSV do sinal bruto de 1 kHz |
+| `make run` | processa o `Data/` e gera os relatórios |
+| `make run-full` | idem, incluindo o CSV do sinal bruto de 1 kHz |
 | `make test` | suíte completa: 53 testes, sem precisar de dados nem de numpy |
 | `make clean` | apaga o `Reports/` |
 
-### Os dois modos
-
-O padrão é `craam`, e ele **reproduz o pipeline de referência bit a bit**. Essa é
-a afirmação central deste trabalho: uma reimplementação independente, reorganizada
-e otimizada, chegando exatamente ao mesmo resultado do código original.
-
-```bash
-python3 hats_report.py --modo corrigido --export-csv
-```
-
-O modo `corrigido` aplica o que foi apurado durante a validação:
-
-| | `craam` (padrão) | `corrigido` |
-|---|---|---|
+---|---|---|
 | registros anteriores à hora nominal | descartados, como na referência | mantidos — são dados bons |
 | recursão de Goertzel | com o off-by-one do `windowed_dft.c` | forma correta |
 | saída | idêntica à referência | numericamente melhor, e por isso diferente |
@@ -215,11 +238,8 @@ assim.
 
 #### Comparando com o Goertzel correto
 
-```bash
-make csv-nosso-corrigido
-```
-
-Grava a saída no modo corrigido. Aí o `diff` mostra as 9 linhas
+As correções estão no projeto irmão `TCC_HATS_corrigido`, e o `make diff` de lá
+mostra o quanto elas mudam o resultado. Aí o `diff` mostra as 9 linhas
 divergindo, e `DECIMALS` diz em quantas casas os dois concordam:
 
 | | linhas divergentes |
@@ -306,24 +326,21 @@ make bench-craam
 | implementação | tempo | memória |
 |---|---|---|
 | `HATS.py` do CRAAM (numpy + binário C) | 1,16 s | 896 MB |
-| pacote, stdlib, modo craam | 6,14 s | 65 MB |
-| **pacote, numpy, modo craam** | **0,11 s** | **93 MB** |
-| pacote, stdlib, modo corrigido | 4,13 s | 94 MB |
-| pacote, numpy, modo corrigido | 0,12 s | 135 MB |
+| pacote, backend stdlib | 6,14 s | 65 MB |
+| **pacote, backend numpy** | **0,11 s** | **93 MB** |
 
-No modo padrão, com numpy, o pacote é **~10× mais rápido que a referência** usando
-**~10× menos memória** — e produzindo saída idêntica bit a bit. Sem numpy é ~5×
-mais lento, que é o preço de não ter dependência nenhuma.
+Com numpy o pacote é **~10× mais rápido que a referência** usando **~10× menos
+memória** — e produzindo saída idêntica bit a bit. Sem numpy é ~5× mais lento,
+que é o preço de não ter dependência nenhuma.
 
 `make bench` mede só os backends, sem precisar do ambiente de referência.
-`--modos craam` ou `--modos corrigido` restringem a medição a um deles.
 
-### A recursão do modo craam também é vetorizada
+### A recursão também é vetorizada
 
 A reprodução bit a bit exige a recursão de Goertzel, não o produto interno — a
-ordem das operações muda o arredondamento. Isso parecia condenar o modo padrão a
-ser lento, e por um momento foi: numpy dava 6,21 s contra 6,41 s do stdlib, ou
-seja ganho nenhum.
+ordem das operações muda o arredondamento. Isso parecia condenar o pipeline a ser
+lento, e por um momento foi: numpy dava 6,21 s contra 6,41 s do stdlib, ou seja
+ganho nenhum.
 
 A saída foi observar que a recursão é sequencial **dentro** de uma janela, mas as
 janelas são **independentes entre si**. Vetorizando através delas, a ordem das

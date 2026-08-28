@@ -39,11 +39,6 @@ def build_parser():
     processing.add_argument("--fft-bin-mode", choices=["reference", "exact"], default="reference",
                             help="'reference' reproduz o floor() do HATS_fft.c; 'exact' usa o "
                                  "bin fracionário e elimina o scalloping dependente de fase.")
-    processing.add_argument("--modo", choices=[constants.MODE_CRAAM, constants.MODE_CORRECTED],
-                            default=constants.MODE_CRAAM,
-                            help="'craam' (padrão) reproduz o pipeline de referência bit a "
-                                 "bit. 'corrigido' mantém os registros anteriores à hora "
-                                 "nominal e usa a forma correta da recursão de Goertzel.")
     processing.add_argument("--backend", choices=["auto", "numpy", "stdlib"], default="auto")
 
     info = parser.add_argument_group("informação")
@@ -61,7 +56,6 @@ def main(argv=None):
         return 0
 
     backend_name, analyser, rbd_exporter = backends.resolve(args.backend)
-    mode_settings = constants.PROCESSING_MODES[args.modo]
     project_root = Path(args.project_root).resolve()
     paths = discovery.ensure_structure(project_root, args.data_dir, args.reports_dir, args.xml_dir)
 
@@ -85,9 +79,9 @@ def main(argv=None):
         "sampling_frequency": args.fft_sampling_hz,
         "bin_mode": args.fft_bin_mode,
         "record_limit": args.record_limit,
-        "mode": args.modo,
-        "drop_before_hour": mode_settings["drop_before_hour"],
-        "goertzel_c_legacy": mode_settings["goertzel_c_legacy"],
+        # Fixos: este pipeline reproduz a referência. Ver hats/constants.py.
+        "drop_before_hour": True,
+        "goertzel_c_legacy": True,
     }
     settings = {
         "options": options,
@@ -103,8 +97,8 @@ def main(argv=None):
         "aux": schema_module.load(paths["xml_dir"], "aux"),
     }
 
-    print("hats {}  |  backend: {}  |  modo: {} — {}".format(
-        __version__, backend_name, args.modo, mode_settings["description"]))
+    print("hats {}  |  backend: {}  |  reproduz o HATS.py do CRAAM bit a bit".format(
+        __version__, backend_name))
     processed = []
     for day_key, day_info in day_index.items():
         reports.process_day(day_key, day_info, paths, schemas, settings)
@@ -113,8 +107,7 @@ def main(argv=None):
     exporters.write_json({
         "hats_version": __version__,
         "backend": backend_name,
-        "mode": args.modo,
-        "mode_description": mode_settings["description"],
+        "fidelity": "reproduz o HATS.py do CRAAM bit a bit",
         "project_root": str(project_root),
         "data_dir": str(paths["data_dir"]),
         "reports_dir": str(paths["reports_dir"]),

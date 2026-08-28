@@ -87,21 +87,20 @@ def time_it(function, repeats):
     return best, result
 
 
-def measure_package(rbd_path, xml_dir, backend, repeats, mode):
+def measure_package(rbd_path, xml_dir, backend, repeats):
     from hats import backends, constants, schema as schema_module
 
     name, analyser, _exporter = backends.resolve(backend)
-    settings = constants.PROCESSING_MODES[mode]
     loaded = schema_module.load(xml_dir, "rbd")
     options = {"demodulate": True, "window_size": 128, "steps": 32,
                "target_frequency": 20.0, "sampling_frequency": 1000.0,
                "bin_mode": "reference", "record_limit": None,
-               "drop_before_hour": settings["drop_before_hour"],
-               "goertzel_c_legacy": settings["goertzel_c_legacy"]}
+               "drop_before_hour": True,
+               "goertzel_c_legacy": True}
     before = peak_memory_mb()
     elapsed, result = time_it(lambda: analyser(rbd_path, loaded, dict(options)), repeats)
     return {
-        "label": "pacote hats, {}, modo {}".format(name, mode),
+        "label": "pacote hats, backend {}".format(name),
         "seconds": elapsed,
         "memory_mb": max(peak_memory_mb() - before, peak_memory_mb()),
         "windows": result["demodulation"]["windows"],
@@ -149,9 +148,6 @@ def main():
     parser.add_argument("--fft-program", default=None)
     parser.add_argument("--repeats", type=int, default=3, help="Execuções por medida; vale a melhor.")
     parser.add_argument("--with-craam", action="store_true", help="Também mede o pipeline original.")
-    parser.add_argument("--modos", nargs="+", default=["craam", "corrigido"],
-                        choices=["craam", "corrigido"],
-                        help="Modos do pacote a medir. Por padrão, os dois.")
     parser.add_argument("--seconds", type=int, default=3600, help="Duração do arquivo sintético.")
     args = parser.parse_args()
 
@@ -177,9 +173,8 @@ def main():
         backend_list = ["stdlib"] + (["numpy"] if backends.numpy_available() else [])
         if not backends.numpy_available():
             print("  (numpy não instalado: só o backend stdlib foi medido)")
-        for mode in args.modos:
-            for backend in backend_list:
-                rows.append(measure_package(rbd_path, xml_dir, backend, args.repeats, mode))
+        for backend in backend_list:
+            rows.append(measure_package(rbd_path, xml_dir, backend, args.repeats))
 
         if args.with_craam:
             fft_program = Path(args.fft_program) if args.fft_program else Path(args.upstream_dir) / "HATS_fft"

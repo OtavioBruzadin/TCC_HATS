@@ -73,10 +73,9 @@ def from_craam(day, hour, xml_dir, day_dir, upstream_dir, fft_program):
     return rows, "HATS.py {}".format(HATS.__version__), h.rbd.MetaData.get("N_Records_Deleted", 0)
 
 
-def from_ours(day, hour, xml_dir, day_dir, mode):
+def from_ours(day, hour, xml_dir, day_dir):
     from hats import backends, constants, schema as schema_module
 
-    settings = constants.PROCESSING_MODES[mode]
 
     backend_name, analyser, _exporter = backends.resolve("auto")
     rbd_path = day_dir / "hats-{}T{}.rbd".format(day, hour)
@@ -91,15 +90,15 @@ def from_ours(day, hour, xml_dir, day_dir, mode):
         "sampling_frequency": constants.SAMPLING_FREQUENCY,
         "bin_mode": "reference",
         "record_limit": None,
-        "drop_before_hour": settings["drop_before_hour"],
-        "goertzel_c_legacy": settings["goertzel_c_legacy"],
+        "drop_before_hour": True,
+        "goertzel_c_legacy": True,
     })
     if "_deconv" not in result:
         raise SystemExit("Nenhuma janela demodulada — o arquivo é curto demais?")
 
     husecs, amplitudes, _date = result["_deconv"]
     dropped = result["integrity"].get("records_dropped_before_hour", 0)
-    origem = "pacote hats, backend {}, modo {}".format(backend_name, mode)
+    origem = "pacote hats, backend {}".format(backend_name)
     return list(zip(husecs, amplitudes)), origem, dropped
 
 
@@ -116,9 +115,6 @@ def main():
     parser.add_argument("--fft-program", default=None)
     parser.add_argument("--decimals", type=int, default=6,
                         help="Casas decimais na amplitude. Use -1 para precisão total.")
-    parser.add_argument("--modo", choices=["craam", "corrigido"], default="craam",
-                        help="Modo 'nosso': 'craam' (padrão) reproduz a referência bit a bit; "
-                             "'corrigido' aplica as correções e deixa de bater linha a linha.")
     args = parser.parse_args()
 
     day_dir = Path(args.data_dir) if args.data_dir else (PROJECT_ROOT / "Data" / args.day)
@@ -133,7 +129,7 @@ def main():
             raise SystemExit("HATS_fft não encontrado em {}.\nRode: make setup-reference".format(fft_program))
         rows, origin, dropped = from_craam(args.day, args.hour, xml_dir, day_dir, upstream_dir, fft_program)
     else:
-        rows, origin, dropped = from_ours(args.day, args.hour, xml_dir, day_dir, args.modo)
+        rows, origin, dropped = from_ours(args.day, args.hour, xml_dir, day_dir)
 
     count = write_csv(rows, destination, decimals)
     print("  origem     : {}".format(origin))
