@@ -32,7 +32,40 @@ HUSEC_PER_SAMPLE = 10           # a 1 kHz
 STDLIB_CHUNK_RECORDS = 16384
 NUMPY_CHUNK_RECORDS = 262144
 
-# --- Modos de operação -----------------------------------------------------
+# --- Modos de processamento ------------------------------------------------
+#
+# 'craam' é o padrão e reproduz o pipeline de referência exatamente: mesmo
+# descarte de registros, mesmo defeito na recursão de Goertzel. A saída sai
+# idêntica bit a bit à do HATS.py, o que é justamente o ponto — significa que
+# esta reimplementação independente, com toda a reorganização e as otimizações,
+# chega ao mesmo resultado do original.
+#
+# 'corrigido' aplica o que foi apurado durante a validação: mantém os registros
+# anteriores à hora nominal, que são dados bons, e usa a forma correta da
+# recursão. Numericamente melhor, e por isso mesmo diferente da referência.
+#
+# O que NÃO depende do modo: as correções de unidade do apontamento e a marcação
+# dos registros defasados. Essas são aditivas — colunas e campos novos, sem tocar
+# em nenhum valor que a referência produz —, então valem sempre.
+
+MODE_CRAAM = "craam"
+MODE_CORRECTED = "corrigido"
+
+PROCESSING_MODES = {
+    MODE_CRAAM: {
+        "drop_before_hour": True,
+        "goertzel_c_legacy": True,
+        "description": "reproduz o HATS.py do CRAAM bit a bit",
+    },
+    MODE_CORRECTED: {
+        "drop_before_hour": False,
+        "goertzel_c_legacy": False,
+        "description": "aplica as correções apuradas na validação",
+    },
+}
+
+
+# --- Modos de operação do telescópio ---------------------------------------
 
 # Do extract_scans() e do SkyDip() do HATS.py. A correspondência de 7 e 8 estava
 # invertida no HATS.py até 2025-10-17; a revisão de 2026-04-17 corrigiu, com a

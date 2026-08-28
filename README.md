@@ -18,15 +18,41 @@ escolhido sozinho; os resultados são os mesmos.
 make run
 ```
 
-Equivale a `python3 hats_report.py --export-csv`. `make` sozinho lista todos os
-alvos.
+`make` sozinho lista todos os alvos.
 
 | comando | o que faz |
 |---|---|
-| `make run` | processa o `Data/` e gera os relatórios |
-| `make run-full` | idem, incluindo o CSV do sinal bruto de 1 kHz |
-| `make test` | suíte completa: 48 testes, sem precisar de dados nem de numpy |
+| `make run` | processa o `Data/` — **modo craam**, saída idêntica à da referência |
+| `make run-corrigido` | idem, com as correções apuradas na validação |
+| `make run-full` | como o `run`, incluindo o CSV do sinal bruto de 1 kHz |
+| `make test` | suíte completa: 53 testes, sem precisar de dados nem de numpy |
 | `make clean` | apaga o `Reports/` |
+
+### Os dois modos
+
+O padrão é `craam`, e ele **reproduz o pipeline de referência bit a bit**. Essa é
+a afirmação central deste trabalho: uma reimplementação independente, reorganizada
+e otimizada, chegando exatamente ao mesmo resultado do código original.
+
+```bash
+python3 hats_report.py --modo corrigido --export-csv
+```
+
+O modo `corrigido` aplica o que foi apurado durante a validação:
+
+| | `craam` (padrão) | `corrigido` |
+|---|---|---|
+| registros anteriores à hora nominal | descartados, como na referência | mantidos — são dados bons |
+| recursão de Goertzel | com o off-by-one do `windowed_dft.c` | forma correta |
+| saída | idêntica à referência | numericamente melhor, e por isso diferente |
+
+**As correções de unidade do apontamento e a marcação dos registros defasados não
+dependem do modo** — valem sempre. Elas são aditivas: acrescentam colunas e campos
+sem tocar em nenhum valor que a referência produz, então não conflitam com a
+reprodução bit a bit.
+
+O modo usado fica registrado no `summary.json` e em cada relatório de hora, junto
+com a contagem de registros descartados e a marcação `goertzel_c_legacy`.
 
 Para controle fino, chame o script direto:
 
@@ -170,7 +196,7 @@ acusaria toda linha como divergente sem que número nenhum tivesse mudado.
 
 #### O que foi preciso para o diff zerar
 
-Três condições, e cada uma foi apurada por medição.
+Quatro condições, cada uma apurada por medição.
 
 **1. Reproduzir o descarte de registros.** O `HATS.py` joga fora os registros
 anteriores à hora nominal, o que desloca o início da janela deslizante. No
@@ -181,15 +207,15 @@ coincidem e o `diff` compararia instantes diferentes.
 **2. Reproduzir o off-by-one do Goertzel.** O `windowed_dft.c` devolve `s[N-2]` e
 `s[N-3]` no lugar de `s[N-1]` e `s[N-2]`. Isso equivale a somar apenas as `N-1`
 primeiras amostras da janela, ainda dividindo por `N` — equivalência verificada
-contra um porte fiel da recursão, com erro de 2×10⁻¹⁴. É a flag
-`--replicar-craam`, que `make csv-nosso` já usa.
+contra um porte fiel da recursão, com erro de 2×10⁻¹⁴.
 
 **3. Usar a própria recursão, não o produto interno equivalente.** Os dois dão o
 mesmo número em precisão infinita, mas arredondam diferente e divergem no décimo
 terceiro dígito. Medido: produto interno, 0 de 9 janelas idênticas; recursão
-fiel, 9 de 9.
+fiel, 9 de 9. Por isso o modo `craam` abre mão da otimização do produto interno
+na demodulação — e só nela.
 
-E, do lado do C, **compilar com `-ffp-contract=off`**. Sem isso o compilador funde
+**4. Compilar o `HATS_fft` com `-ffp-contract=off`.** Sem isso o compilador funde
 multiplicação e soma, muda o arredondamento e a saída deixa de ser reproduzível:
 com FMA, 0 de 9 janelas batem; sem, 9 de 9. O `setup_reference.sh` já compila
 assim.
@@ -197,10 +223,10 @@ assim.
 #### Comparando com o Goertzel correto
 
 ```bash
-make csv-nosso-fiel
+make csv-nosso-corrigido
 ```
 
-Grava a saída sem reproduzir o defeito. Aí o `diff` mostra as 9 linhas
+Grava a saída no modo corrigido. Aí o `diff` mostra as 9 linhas
 divergindo, e `DECIMALS` diz em quantas casas os dois concordam:
 
 | | linhas divergentes |

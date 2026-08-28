@@ -12,14 +12,15 @@ HOUR    ?= 1800
 DAYDIR  ?= Data/$(DAY)
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell run-nosso run-craam run-ambos run-alinhado csv-craam csv-nosso csv-nosso-fiel diff setup-reference
+.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell run-nosso run-craam run-ambos csv-craam csv-nosso csv-nosso-corrigido diff run-corrigido setup-reference
 
 help:
 	@echo ""
 	@echo "  Uso: make <alvo>"
 	@echo ""
 	@echo "  Rodar"
-	@echo "    make run                 processa o Data/ e gera os relatórios"
+	@echo "    make run                 processa o Data/ — modo craam, idêntico à referência"
+	@echo "    make run-corrigido       idem, com as correções apuradas na validação"
 	@echo "    make run-full            idem, incluindo o CSV do sinal bruto de 1 kHz"
 	@echo "    make clean               apaga o Reports/"
 	@echo ""
@@ -27,13 +28,11 @@ help:
 	@echo "    make run-nosso           só o nosso   -> Reports/nosso/"
 	@echo "    make run-craam           só o do CRAAM -> Reports/craam/"
 	@echo "    make run-ambos           os dois, e lista as duas pastas"
-	@echo "    make run-alinhado        o nosso replicando o descarte do HATS.py,"
-	@echo "                             para as janelas caírem na mesma grade dele"
 	@echo ""
 	@echo "  Gerar as duas tabelas para comparar com diff"
 	@echo "    make csv-craam           -> Reports/diff/craam.csv"
 	@echo "    make csv-nosso           -> Reports/diff/nosso.csv (idêntico ao dele)"
-	@echo "    make csv-nosso-fiel      -> idem, com o Goertzel correto"
+	@echo "    make csv-nosso-corrigido -> idem, no modo corrigido"
 	@echo "    make diff                gera as duas e mostra o diff"
 	@echo ""
 	@echo "  Testar"
@@ -104,11 +103,11 @@ csv-craam: check-reference
 
 csv-nosso:
 	@$(PYTHON) tools/deconv_csv.py --source nosso --day $(DAY) --hour $(HOUR) \
-	    --decimals $(DECIMALS) --replicar-craam --out Reports/diff/nosso.csv
-
-csv-nosso-fiel:
-	@$(PYTHON) tools/deconv_csv.py --source nosso --day $(DAY) --hour $(HOUR) \
 	    --decimals $(DECIMALS) --out Reports/diff/nosso.csv
+
+csv-nosso-corrigido:
+	@$(PYTHON) tools/deconv_csv.py --source nosso --day $(DAY) --hour $(HOUR) \
+	    --decimals $(DECIMALS) --modo corrigido --out Reports/diff/nosso.csv
 
 diff: csv-craam csv-nosso
 	@echo ""
@@ -116,11 +115,8 @@ diff: csv-craam csv-nosso
 	@echo "  ----------------------------------------------------------------"
 	@diff Reports/diff/craam.csv Reports/diff/nosso.csv && echo "  (sem diferenças)" || true
 
-run-alinhado:
-	@rm -rf Reports/alinhado
-	$(PYTHON) hats_report.py --reports-dir Reports/alinhado --export-csv --drop-before-hour
-	@echo ""
-	@echo "  Reports/alinhado/   comparável linha a linha com Reports/craam/"
+run-corrigido:
+	$(PYTHON) hats_report.py --reports-dir Reports/corrigido --modo corrigido --export-csv
 
 run-ambos: run-nosso run-craam
 	@echo ""

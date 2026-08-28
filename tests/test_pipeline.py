@@ -15,16 +15,28 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hats import backends, cli, pointing, rbd, records, schema, weather
+from hats import backends, cli, constants, pointing, rbd, records, schema, weather
 from tests import fixtures
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 XML_DIR = PROJECT_ROOT / "XMLTables"
 
-DEFAULT_OPTIONS = {
-    "demodulate": True, "window_size": 128, "steps": 32, "target_frequency": 20.0,
-    "sampling_frequency": 1000.0, "bin_mode": "reference", "record_limit": None,
-}
+def options_for(mode="corrigido", **extra):
+    """Opções de análise para um dos modos de processamento."""
+    settings = constants.PROCESSING_MODES[mode]
+    values = {
+        "demodulate": True, "window_size": 128, "steps": 32, "target_frequency": 20.0,
+        "sampling_frequency": 1000.0, "bin_mode": "reference", "record_limit": None,
+        "drop_before_hour": settings["drop_before_hour"],
+        "goertzel_c_legacy": settings["goertzel_c_legacy"],
+    }
+    values.update(extra)
+    return values
+
+
+# Os testes de análise usam o modo corrigido salvo quando o assunto é o modo
+# craam: assim medem o comportamento próprio do pacote, não o da reprodução.
+DEFAULT_OPTIONS = options_for("corrigido")
 
 
 def numpy_installed():
@@ -93,6 +105,20 @@ class TestRbdAnalysis(TemporaryProject):
         fixtures.write_rbd(path, samples=1000, start_husec=18 * 36000000 - 5000)
         result = rbd.analyse_stdlib(path, self.rbd_schema, dict(DEFAULT_OPTIONS))
         self.assertEqual(result["integrity"]["records_before_nominal_hour"], 500)
+
+    def test_craam_mode_drops_pre_hour_records_and_replicates_the_defect(self):
+        path = self.paths["day_dir"] / "hats-2026-03-17T1800.rbd"
+        fixtures.write_rbd(path, samples=1000, start_husec=18 * 36000000 - 5000)
+
+        craam = rbd.analyse_stdlib(path, self.rbd_schema, options_for("craam"))
+        corrected = rbd.analyse_stdlib(path, self.rbd_schema, options_for("corrigido"))
+
+        self.assertEqual(craam["integrity"]["records_dropped_before_hour"], 500)
+        self.assertEqual(corrected["integrity"]["records_dropped_before_hour"], 0)
+        self.assertEqual(craam["total_records"], 500)
+        self.assertEqual(corrected["total_records"], 1000)
+        self.assertTrue(craam["demodulation"]["goertzel_c_legacy"])
+        self.assertFalse(corrected["demodulation"]["goertzel_c_legacy"])
 
     def test_no_demod_option(self):
         options = dict(DEFAULT_OPTIONS, demodulate=False)
@@ -193,6 +219,16 @@ class TestCommandLine(TemporaryProject):
             finally:
                 sys.stdout = stdout
         return self.tmp / "Reports"
+
+    def test_default_mode_is_craam(self):
+        reports = self._run()
+        summary = json.loads((reports / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["mode"], constants.MODE_CRAAM)
+
+    def test_corrected_mode_is_recorded_in_the_summary(self):
+        reports = self._run("--modo", "corrigido")
+        summary = json.loads((reports / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["mode"], constants.MODE_CORRECTED)
 
     def test_produces_the_expected_files(self):
         reports = self._run("--export-csv")
