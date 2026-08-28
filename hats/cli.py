@@ -32,6 +32,10 @@ def build_parser():
     processing.add_argument("--record-limit", type=int, default=None,
                             help="Lê só os N primeiros registros de cada binário.")
     processing.add_argument("--no-demod", action="store_true", help="Pula a demodulação de 20 Hz.")
+    processing.add_argument("--drop-before-hour", action="store_true",
+                            help="Descarta os registros anteriores à hora nominal, como o "
+                                 "HATS.py faz. Necessário para a demodulação cair na mesma "
+                                 "grade de janelas da referência.")
     processing.add_argument("--fft-window", type=int, default=constants.WINDOW_SIZE)
     processing.add_argument("--fft-steps", type=int, default=constants.STEPS)
     processing.add_argument("--fft-target-hz", type=float, default=constants.TARGET_FREQUENCY)
@@ -79,6 +83,7 @@ def main(argv=None):
         "sampling_frequency": args.fft_sampling_hz,
         "bin_mode": args.fft_bin_mode,
         "record_limit": args.record_limit,
+        "drop_before_hour": args.drop_before_hour,
     }
     settings = {
         "options": options,

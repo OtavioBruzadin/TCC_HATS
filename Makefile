@@ -11,7 +11,7 @@ HOUR    ?= 1800
 DAYDIR  ?= Data/$(DAY)
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell setup-reference
+.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell run-nosso run-craam run-ambos run-alinhado setup-reference
 
 help:
 	@echo ""
@@ -21,6 +21,13 @@ help:
 	@echo "    make run                 processa o Data/ e gera os relatórios"
 	@echo "    make run-full            idem, incluindo o CSV do sinal bruto de 1 kHz"
 	@echo "    make clean               apaga o Reports/"
+	@echo ""
+	@echo "  Rodar os dois pipelines separados, lado a lado"
+	@echo "    make run-nosso           só o nosso   -> Reports/nosso/"
+	@echo "    make run-craam           só o do CRAAM -> Reports/craam/"
+	@echo "    make run-ambos           os dois, e lista as duas pastas"
+	@echo "    make run-alinhado        o nosso replicando o descarte do HATS.py,"
+	@echo "                             para as janelas caírem na mesma grade dele"
 	@echo ""
 	@echo "  Testar"
 	@echo "    make test                suíte completa (não precisa de dados nem de numpy)"
@@ -72,6 +79,29 @@ side-by-side: check-reference
 
 craam-shell: check-reference
 	tools/craam_shell.sh $(DAY) $(HOUR)
+
+run-nosso:
+	@rm -rf Reports/nosso
+	$(PYTHON) hats_report.py --reports-dir Reports/nosso --export-csv --export-rbd-csv
+	@echo ""
+	@echo "  Reports/nosso/"
+	@find Reports/nosso -type f | sort | sed 's|^|    |'
+
+run-craam: check-reference
+	@rm -rf Reports/craam
+	OUTDIR=$(CURDIR)/Reports/craam tools/craam_csv.sh $(DAY) $(HOUR)
+
+run-alinhado:
+	@rm -rf Reports/alinhado
+	$(PYTHON) hats_report.py --reports-dir Reports/alinhado --export-csv --drop-before-hour
+	@echo ""
+	@echo "  Reports/alinhado/   comparável linha a linha com Reports/craam/"
+
+run-ambos: run-nosso run-craam
+	@echo ""
+	@echo "  ================ os dois pipelines, saídas separadas ================"
+	@echo "  Reports/nosso/   este projeto"
+	@echo "  Reports/craam/   HATS.py do CRAAM"
 
 setup-reference:
 	tools/setup_reference.sh

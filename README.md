@@ -99,6 +99,50 @@ Os dois aceitam `DAY=` e `HOUR=`:
 make compare-craam DAY=2026-03-18 HOUR=2000
 ```
 
+### Rodar os dois pipelines separados
+
+```bash
+make run-ambos
+```
+
+Cada um grava na sua própria pasta, sem misturar:
+
+```
+Reports/
+├── nosso/     este projeto
+└── craam/     HATS.py do CRAAM
+```
+
+Ou um de cada vez, com `make run-nosso` e `make run-craam`.
+
+**As duas saídas não são comparáveis linha a linha.** O `HATS.py` descarta os
+registros anteriores à hora nominal — 559 no arquivo `T1800` de 2026-03-17 —, o
+que desloca o início da janela deslizante. Como `559 = 17×32 + 15`, a defasagem
+não é múltipla do passo, e as duas grades de janelas ficam separadas por 15
+amostras: nenhuma janela nossa cai no mesmo instante que uma dele.
+
+Para alinhar:
+
+```bash
+make run-alinhado
+```
+
+Roda o nosso replicando o mesmo descarte, em `Reports/alinhado/`. Aí as janelas
+coincidem e dá para confrontar husec por husec:
+
+```
+       husec               CRAAM               NOSSO     dif rel
+   648000643     122.59035467314     122.59299471498    2.15e-05
+   648000963     124.87169590452     124.87007551462    1.30e-05
+   648001283     124.85157177433     124.85255332264    7.86e-06
+```
+
+As 9 janelas batem, com erro relativo máximo de 2,762×10⁻⁵ — o off-by-one do
+Goertzel, e nada mais.
+
+Fora dessa comparação o descarte não se justifica: os registros descartados têm
+`sample` e `husec` contínuos, são dados bons.
+
 ### Rodar o código original do CRAAM
 
 ```bash

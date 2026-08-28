@@ -26,7 +26,44 @@ def total_records(path, schema, limit=None):
     return min(count, limit) if limit is not None else count
 
 
-def iter_columns(path, schema, limit=None, chunk_records=constants.STDLIB_CHUNK_RECORDS):
+def first_index_at_or_after(path, schema, field_name, threshold):
+    """
+    Índice do primeiro registro cujo `field_name` alcança `threshold`.
+
+    Busca binária, válida porque o campo é monotônico nos arquivos do HATS — o
+    que é justamente o que a verificação de integridade confirma. Custa uns
+    poucos seeks em vez de uma passada pelo arquivo.
+    """
+    index_of = {}
+    position = 0
+    for field in schema["fields"]:
+        index_of[field["name"]] = position
+        position += field.get("dim", 1)
+    if field_name not in index_of:
+        return 0
+
+    unpacker = struct.Struct(schema["struct_format"])
+    record_size = schema["record_size"]
+    slot = index_of[field_name]
+    count = total_records(path, schema)
+
+    with path.open("rb") as handle:
+
+        def value_at(index):
+            handle.seek(index * record_size)
+            return unpacker.unpack(handle.read(record_size))[slot]
+
+        low, high = 0, count
+        while low < high:
+            middle = (low + high) // 2
+            if value_at(middle) < threshold:
+                low = middle + 1
+            else:
+                high = middle
+    return low
+
+
+def iter_columns(path, schema, limit=None, chunk_records=constants.STDLIB_CHUNK_RECORDS, offset=0):
     """
     Percorre o arquivo em blocos, entregando cada bloco já transposto em colunas.
 
@@ -40,9 +77,11 @@ def iter_columns(path, schema, limit=None, chunk_records=constants.STDLIB_CHUNK_
     """
     record_size = schema["record_size"]
     unpacker = struct.Struct(schema["struct_format"])
-    remaining = total_records(path, schema, limit)
+    remaining = max(0, total_records(path, schema, limit) - offset)
 
     with path.open("rb") as handle:
+        if offset:
+            handle.seek(offset * record_size)
         while remaining > 0:
             blob = handle.read(record_size * min(chunk_records, remaining))
             if not blob:
@@ -107,16 +146,18 @@ def sample_records(path, schema, sample_count):
     return records, count
 
 
-def iter_numpy_blocks(path, schema, limit=None, chunk_records=constants.NUMPY_CHUNK_RECORDS):
+def iter_numpy_blocks(path, schema, limit=None, chunk_records=constants.NUMPY_CHUNK_RECORDS, offset=0):
     """Percorre o arquivo em blocos como arrays estruturados do numpy."""
     import numpy as np
 
     from hats import schema as schema_module
 
     dtype = schema_module.numpy_dtype(schema)
-    remaining = total_records(path, schema, limit)
+    remaining = max(0, total_records(path, schema, limit) - offset)
 
     with path.open("rb") as handle:
+        if offset:
+            handle.seek(offset * schema["record_size"])
         while remaining > 0:
             block = np.fromfile(handle, dtype=dtype, count=min(chunk_records, remaining))
             if block.size == 0:

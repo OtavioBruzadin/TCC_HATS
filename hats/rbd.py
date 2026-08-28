@@ -81,14 +81,42 @@ class IntegrityTracker(object):
                 self.sample_leaps += 1
             self._previous_sample = int(sample_column[-1])
 
-    def report(self):
+    def report(self, dropped=0):
+        if dropped:
+            note = ("{} registros anteriores à hora nominal foram descartados, "
+                    "reproduzindo o comportamento do HATS.py.".format(dropped))
+        else:
+            note = ("O HATS.py descarta registros com husec < hora*36000000; "
+                    "aqui eles são mantidos e apenas contados.")
         return {
             "sample_number_leaps": self.sample_leaps,
             "husec_leaps": self.husec_leaps,
             "records_before_nominal_hour": self.before_hour,
-            "note": ("O HATS.py descarta registros com husec < hora*36000000; "
-                     "aqui eles são mantidos e apenas contados."),
+            "records_dropped_before_hour": dropped,
+            "note": note,
         }
+
+
+def _read_offset(path, schema, options):
+    """
+    Quantos registros pular no início do arquivo.
+
+    Com `drop_before_hour`, reproduz o descarte do HATS.py: tudo com
+    husec < hora*36000000 fica de fora. Isso existe para permitir comparação
+    direta com o pipeline de referência — sem o mesmo descarte, as grades de
+    janelas da demodulação ficam defasadas e nenhuma janela cai no mesmo
+    instante nos dois. No arquivo T1800 de 2026-03-17 são 559 registros, e
+    559 = 17x32 + 15, ou seja a defasagem não é múltipla do passo.
+
+    Fora dessa comparação o descarte não se justifica: os registros têm
+    `sample` e `husec` contínuos, são dados bons.
+    """
+    if not options.get("drop_before_hour"):
+        return 0
+    threshold = _hour_start_husec(path)
+    if threshold is None:
+        return 0
+    return records.first_index_at_or_after(path, schema, "husec", threshold)
 
 
 def _hour_start_husec(path):
@@ -121,7 +149,7 @@ def _demodulation_report(options, husecs, amplitudes, golay_field, date_str, met
     }
 
 
-def _assemble(schema, accumulators, tracker, total, date_str):
+def _assemble(schema, accumulators, tracker, total, date_str, dropped=0):
     fields = schema_module.converted_fields(schema)
     result = {
         "total_records": total,
@@ -129,7 +157,7 @@ def _assemble(schema, accumulators, tracker, total, date_str):
                            if tracker.first_husec is not None else None),
         "last_time_utc": (timebase.datetime_from_husec(date_str, tracker.last_husec)
                           if tracker.last_husec is not None else None),
-        "integrity": tracker.report(),
+        "integrity": tracker.report(dropped),
         "statistics_adcu": {},
         "statistics_calibrated": {},
         "units_calibrated": {f["name"]: f.get("converted_unit") for f in fields},
@@ -152,7 +180,8 @@ def analyse_stdlib(path, schema, options):
     tracker = IntegrityTracker(_hour_start_husec(path))
 
     golay_field = next((f for f in schema["fields"] if f["name"] == "golay"), None)
-    count = records.total_records(path, schema, options["record_limit"])
+    dropped = _read_offset(path, schema, options)
+    count = max(0, records.total_records(path, schema, options["record_limit"]) - dropped)
     demodulator = None
     if options["demodulate"] and golay_field is not None and "husec" in index_of:
         windows = demodulation.window_count(count, options["window_size"], options["steps"])
@@ -162,7 +191,7 @@ def analyse_stdlib(path, schema, options):
                 options["sampling_frequency"], options["bin_mode"], windows)
 
     total = 0
-    for columns, chunk_count in records.iter_columns(path, schema, options["record_limit"]):
+    for columns, chunk_count in records.iter_columns(path, schema, options["record_limit"], offset=dropped):
         total += chunk_count
         tracker.feed_columns(columns[index_of["sample"]] if "sample" in index_of else (),
                              columns[index_of["husec"]] if "husec" in index_of else ())
@@ -179,7 +208,7 @@ def analyse_stdlib(path, schema, options):
                 demodulator.feed([v * slope + offset for v in column],
                                  columns[index_of["husec"]], total)
 
-    result = _assemble(schema, accumulators, tracker, total, date_str)
+    result = _assemble(schema, accumulators, tracker, total, date_str, dropped)
     if demodulator is not None and demodulator.amplitudes:
         result["demodulation"] = _demodulation_report(
             options, demodulator.husecs, demodulator.amplitudes, golay_field, date_str,
@@ -200,7 +229,8 @@ def analyse_numpy(path, schema, options):
     dtype_names = schema_module.numpy_dtype(schema).names
 
     golay_field = next((f for f in schema["fields"] if f["name"] == "golay"), None)
-    count = records.total_records(path, schema, options["record_limit"])
+    dropped = _read_offset(path, schema, options)
+    count = max(0, records.total_records(path, schema, options["record_limit"]) - dropped)
     window_size = options["window_size"]
     steps = options["steps"]
 
@@ -221,7 +251,7 @@ def analyse_numpy(path, schema, options):
         emitted = 0
 
     total = 0
-    for block in records.iter_numpy_blocks(path, schema, options["record_limit"]):
+    for block in records.iter_numpy_blocks(path, schema, options["record_limit"], offset=dropped):
         total += block.size
         tracker.feed_numpy(block["sample"] if "sample" in dtype_names else np.empty(0),
                            block["husec"] if "husec" in dtype_names else np.empty(0))
@@ -260,7 +290,7 @@ def analyse_numpy(path, schema, options):
                 carry_husec = carry_husec[drop:]
                 consumed = next_start
 
-    result = _assemble(schema, accumulators, tracker, total, date_str)
+    result = _assemble(schema, accumulators, tracker, total, date_str, dropped)
     if demodulating and amplitude_blocks:
         amplitudes = np.concatenate(amplitude_blocks).tolist()
         husecs = [int(value) for value in np.concatenate(husec_blocks)]
