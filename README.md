@@ -99,6 +99,55 @@ Os dois aceitam `DAY=` e `HOUR=`:
 make compare-craam DAY=2026-03-18 HOUR=2000
 ```
 
+### Rodar o código original do CRAAM
+
+```bash
+make craam-shell
+```
+
+Abre uma sessão Python interativa com o `HATS.py` deles carregado e o objeto já
+pronto na variável `h`:
+
+```
+  HATS.py 2026-04-17T0902BST — código original do CRAAM
+  ----------------------------------------------------------
+  h.rbd.rData         441 registros brutos
+  h.rbd.cData         441 registros calibrados
+  h.rbd.Deconv          9 janelas demoduladas
+  h.aux.Data         1000 registros de apontamento
+  descartados         559 anteriores à hora nominal
+```
+
+Outro dia ou outra hora:
+
+```bash
+make craam-shell DAY=2026-03-18 HOUR=2000
+```
+
+O script resolve três detalhes que fazem o `HATS.py` falhar quando configurado
+pela documentação:
+
+- A variável do XML chama-se `HATSXMLPATH`. O cabeçalho do próprio `HATS.py`
+  manda exportar `HATSXMLTABLES`, que o código nunca lê.
+- `HATS_DATA_InputPath` aponta para a pasta **do dia**, não para o `Data/`. Os
+  caminhos são montados como `InputPath + arquivo.rbd` e
+  `InputPath + 'aux/' + arquivo.aux`.
+- `HATS_FFTProgram` precisa do caminho completo do binário, compilado nesta
+  máquina — o do zip é ELF Linux x86-64.
+
+Para montar o ambiente à mão, sem o script:
+
+```bash
+export HATSXMLPATH=$PWD/XMLTables HATS_DATA_InputPath=$PWD/Data/2026-03-17 HATS_WS_InputPath=$PWD/Data/2026-03-17/aux HATS_FFTProgram=$PWD/Docs/upstream/HATS_fft PYTHONPATH=$PWD/Docs/upstream
+```
+
+```bash
+.refvenv/bin/python -c "import HATS; h = HATS.hats('2026-03-17 1800'); print(h.rbd.Deconv['amplitude'][:5])"
+```
+
+Note que `h.aux.Data['right_ascension']` sai em **horas**, apesar de o docstring
+dizer graus — é o achado descrito em "Correções aplicadas".
+
 ### Comparar com os protótipos
 
 ```bash

@@ -11,7 +11,7 @@ HOUR    ?= 1800
 DAYDIR  ?= Data/$(DAY)
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side setup-reference
+.PHONY: help test run run-full clean bench bench-craam compare-versions compare-craam side-by-side craam-shell setup-reference
 
 help:
 	@echo ""
@@ -33,6 +33,9 @@ help:
 	@echo "    make compare-versions    pacote contra os protótipos v4 e v5"
 	@echo "    make compare-craam       pacote contra o HATS.py do CRAAM, campo a campo"
 	@echo "    make side-by-side        uma linha de cada, lado a lado no terminal"
+	@echo ""
+	@echo "  Rodar o código original do CRAAM"
+	@echo "    make craam-shell         sessão Python com o HATS.py deles carregado"
 	@echo ""
 	@echo "  Preparar"
 	@echo "    make setup-reference     monta o ambiente do CRAAM (venv + HATS_fft)"
@@ -66,6 +69,9 @@ compare-craam: check-reference
 
 side-by-side: check-reference
 	$(REFPY) tools/side_by_side.py --day-dir $(DAYDIR) --date $(DAY) --hour $(HOUR)
+
+craam-shell: check-reference
+	tools/craam_shell.sh $(DAY) $(HOUR)
 
 setup-reference:
 	tools/setup_reference.sh
