@@ -164,6 +164,23 @@ class TestTables(TemporaryProject):
         self._run("--sem-diagnostico")
         self.assertFalse(list((self.tmp / "Diagnostico").glob("*.json")))
 
+    def test_pointing_also_drops_records_before_the_nominal_hour(self):
+        """
+        O filtro de husec aparece duas vezes no HATS.py, uma para cada tipo de
+        arquivo. Ter implementado só o do .rbd passou despercebido durante toda
+        uma sessão, porque a hora usada nos testes não tinha registro nenhum de
+        apontamento antes da hora. Só a varredura do dia inteiro expôs.
+        """
+        from hats import records as records_module
+        aux = self.paths["aux"]
+        antes = fixtures.write_aux(aux, records=100, stale_every=0,
+                                   start_husec=18 * 36000000 - 20 * 10500)
+        out = self._run()
+        linhas = (out / "2026-03-17T1800-rbd_adcu.csv").read_text(encoding="utf-8").splitlines()
+        total = records_module.total_records(aux, self.aux_schema)
+        # 20 registros começam antes das 18:00 e têm de sair
+        self.assertEqual(len(linhas) - 1, total - 20)
+
     def test_timestamps_truncate_like_the_reference(self):
         self.assertEqual(str(timebase.craam_datetime("2026-03-17", 648000643)),
                          "2026-03-17 18:00:00.064299")

@@ -26,14 +26,41 @@ def _read_offset(path, schema):
     """
     Quantos registros pular: os anteriores à hora nominal do arquivo.
 
-    Busca binária, válida porque o husec é monotônico nestes arquivos. Custa uns
-    poucos seeks em vez de uma passada.
+    Busca binária, o que pressupõe que os registros a descartar formam um prefixo
+    — verificado em 37 milhões de registros dos dados reais, sem uma quebra. A
+    referência usa `np.delete` com máscara booleana, que removeria um registro
+    fora do prefixo também; por isso `_verify_prefix` confere durante a leitura e
+    falha alto em vez de divergir em silêncio.
     """
     hour = timebase.hour_from_filename(path)
     if not (hour and hour[:2].isdigit()):
         return 0
     threshold = int(hour[:2]) * constants.HUSEC_PER_HOUR
     return records.first_index_at_or_after(path, schema, "husec", threshold)
+
+
+def _hour_threshold(path):
+    hour = timebase.hour_from_filename(path)
+    if hour and hour[:2].isdigit():
+        return int(hour[:2]) * constants.HUSEC_PER_HOUR
+    return None
+
+
+def _verify_prefix(path, husec_column, threshold):
+    """
+    Confere que nenhum registro a descartar sobrou depois do prefixo.
+
+    Se sobrasse, a referência o removeria e nós não, e a saída divergiria em
+    silêncio. Custa um min() por bloco.
+    """
+    if threshold is None or not husec_column:
+        return
+    if min(husec_column) < threshold:
+        raise ValueError(
+            "{}: há registro com husec abaixo da hora nominal fora do início do "
+            "arquivo. A leitura por deslocamento não serve aqui; é preciso "
+            "filtrar registro a registro, como o np.delete da referência faz."
+            .format(path.name))
 
 
 def _plan(path, schema, options):
@@ -59,9 +86,11 @@ def analyse_stdlib(path, schema, options):
 
     slope = golay.get("slope", 1.0)
     intercept = golay.get("offset", 0.0)
+    threshold = _hour_threshold(path)
     seen = 0
     for columns, count in records.iter_columns(path, schema, options["record_limit"], offset=offset):
         seen += count
+        _verify_prefix(path, columns[index_of["husec"]], threshold)
         column = columns[index_of["golay"]]
         if golay.get("origin") == "ad7770":
             column = calibration.decode_column(column)
@@ -100,8 +129,13 @@ def analyse_numpy(path, schema, options):
     emitted = 0
     seen = 0
 
+    threshold = _hour_threshold(path)
     for block in records.iter_numpy_blocks(path, schema, options["record_limit"], offset=offset):
         seen += block.size
+        if threshold is not None and block.size and int(block["husec"].min()) < threshold:
+            raise ValueError(
+                "{}: há registro com husec abaixo da hora nominal fora do início "
+                "do arquivo.".format(path.name))
         column = block["golay"]
         if golay.get("origin") == "ad7770":
             column = calibration.numpy_decode_column(column)

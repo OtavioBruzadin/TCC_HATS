@@ -20,7 +20,7 @@ Reproduzir isso exige três coisas que não são óbvias:
     por hora de dados.
 """
 
-from hats import calibration, records, schema as schema_module, timebase
+from hats import calibration, constants, records, schema as schema_module, timebase
 
 
 def _cell(value):
@@ -70,14 +70,29 @@ def write_pointing(destination, aux_path, schema, limit=None):
 
     O nome diz `adcu`, que seriam as contagens do conversor A/D, mas o conteúdo
     é o apontamento — ver a nota no topo do módulo.
+
+    Os registros anteriores à hora nominal são descartados, como o `aux.from_file`
+    da referência faz. Isso é fácil de esquecer porque o filtro aparece duas vezes
+    no HATS.py, uma para cada tipo de arquivo, e porque há horas em que o aux não
+    tem registro nenhum antes da hora — a de 18:00 de 2026-03-17 é uma delas, e
+    por isso a omissão passou despercebida até a comparação varrer o dia inteiro.
+
+    Aqui o filtro é por registro, e não por deslocamento inicial: o `np.delete`
+    da referência remove todo registro que casa, esteja ele onde estiver.
     """
     index_of = schema_module.field_index(schema)
     date_str = timebase.date_from_filename(aux_path)
+    hour = timebase.hour_from_filename(aux_path)
+    threshold = (int(hour[:2]) * constants.HUSEC_PER_HOUR
+                 if hour and hour[:2].isdigit() else None)
 
     def rows():
         for values in records.iter_records(aux_path, schema, limit):
+            husec = values[index_of["husec"]]
+            if threshold is not None and husec < threshold:
+                continue
             row = [values[index_of[f["name"]]] for f in schema["fields"]]
-            row.append(timebase.craam_datetime(date_str, values[index_of["husec"]]))
+            row.append(timebase.craam_datetime(date_str, husec))
             yield row
 
     headers = [f["name"] for f in schema["fields"]] + ["time"]
