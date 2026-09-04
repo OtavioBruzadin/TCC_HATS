@@ -30,7 +30,31 @@ diff -r SaidaCRAAM Saida
 ```
 Sai vazio. `make diff` faz os três de uma vez.
 
-Outro dia ou outra hora: `make run DAY=2026-03-18`, `make diff DAY=2026-03-18 HOUR=2000`.
+Os dois processam **a mesma hora**, para que as pastas sejam comparáveis. Escolha
+com `DAY` e `HOUR`; para o dia inteiro há `make run-dia`, que não tem contraparte
+do outro lado e por isso não entra no `diff`.
+
+```bash
+make diff DAY=2026-03-18 HOUR=2000
+```
+
+### Onde estão os dados
+
+Sem configurar nada, usa o `Data/` do projeto, que traz uma amostra reconstruída
+de 1000 registros. Para os dados reais, aponte para a pasta deles de uma das duas
+formas:
+
+```bash
+make diff DATA="$HOME/.../Hats Data" HOUR=1900
+```
+
+```bash
+export HATS_DATA_InputPath="$HOME/.../Hats Data"
+make diff HOUR=1900
+```
+
+A segunda é a variável que o manual do CRAAM manda exportar na instalação — quem
+já configurou a máquina para o `HATS.py` não precisa fazer nada.
 
 Antes da primeira comparação, uma vez: `make setup-reference`.
 
