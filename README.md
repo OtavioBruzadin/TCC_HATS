@@ -128,20 +128,42 @@ com FMA, 0 de 9 janelas batem; sem, 9 de 9.
 Isso não é escolha arbitrária, e sim o que faz a compilação corresponder ao
 binário real deles — ver a seção seguinte.
 
-**5. Truncar os carimbos de tempo como o `husec2dt()` da referência.** O cálculo
+**5. Descartar os registros anteriores à hora nominal também no apontamento.**
+O filtro aparece **duas vezes** no `HATS.py`, nas linhas 654 e 711 — uma no
+`aux.from_file` e outra no `rbd.from_file`. É fácil implementar só o segundo.
+
+No `.aux` o filtro tem de ser por registro, não por deslocamento inicial: o
+`np.delete` da referência usa máscara booleana e remove um registro que case
+esteja ele onde estiver.
+
+**6. Truncar os carimbos de tempo como o `husec2dt()` da referência.** O cálculo
 dos microssegundos passa por ponto flutuante: para o husec 648000643 o valor
 exato seria 64300 µs, mas `643/1e4 = 0.0643` e `0.0643*1e6 = 64299.999999999993`,
 que `int()` leva a 64299. A referência grava `.064299`.
 
-**6. Gravar os floats no repr de round-trip mais curto** — `50.690450199999994`,
+**7. Gravar os floats no repr de round-trip mais curto** — `50.690450199999994`,
 não `50.69045020`.
 
-**7. Reproduzir a sobrescrita do `-rbd_adcu.csv`.** As linhas 368 e 387 do
+**8. Reproduzir a sobrescrita do `-rbd_adcu.csv`.** As linhas 368 e 387 do
 `toCSV()` usam ambas `rootname+'-rbd_adcu.csv'`: a primeira grava o sinal bruto
 do detector, a segunda grava o apontamento por cima. O conteúdo final desse
 arquivo é o **apontamento**, e o sinal bruto não sobrevive à chamada. O resultado
 é reproduzido; a escrita descartada não, já que o conteúdo final é o mesmo e
 custaria centenas de MB por hora.
+
+## Por que a validação em volume importa
+
+O item 5 acima ficou de fora da implementação por uma sessão inteira de trabalho,
+e nenhuma comparação o revelou — porque a hora usada em todas elas,
+`2026-03-17T1800`, não tem nenhum registro de apontamento antes das 18:00. Batia
+por coincidência.
+
+A varredura das 12 horas do dia, sobre os dados reais, expôs na primeira
+tentativa: **10 das 12 horas divergiam**, sempre no `-rbd_adcu.csv` e sempre por
+uma diferença pequena de linhas. Na hora 1200 são dois registros.
+
+A lição vale registrar: uma amostra pequena, ou uma única hora, não estabelece
+equivalência. O que estabelece é varrer o conjunto e ver o `diff` calar em todos.
 
 ## Validado sobre uma hora completa
 
