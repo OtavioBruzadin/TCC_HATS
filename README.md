@@ -158,36 +158,50 @@ e nenhuma comparação o revelou — porque a hora usada em todas elas,
 `2026-03-17T1800`, não tem nenhum registro de apontamento antes das 18:00. Batia
 por coincidência.
 
-A varredura das 12 horas do dia, sobre os dados reais, expôs na primeira
-tentativa: **10 das 12 horas divergiam**, sempre no `-rbd_adcu.csv` e sempre por
-uma diferença pequena de linhas. Na hora 1200 são dois registros.
+A varredura expôs duas divergências que nenhuma comparação de uma hora só teria
+encontrado — e a segunda apareceu justamente depois de corrigir a primeira e
+declarar a hora 1800 idêntica.
 
 A lição vale registrar: uma amostra pequena, ou uma única hora, não estabelece
-equivalência. O que estabelece é varrer o conjunto e ver o `diff` calar em todos.
+equivalência. O que estabelece é varrer o conjunto inteiro e ver o `diff` calar
+em todos.
 
-## Validado sobre uma hora completa
+## Validado sobre 32 horas de dados reais
 
-Não é uma amostra: o arquivo `hats-2026-03-17T1800.rbd` inteiro, do instrumento.
+Os três dias disponíveis, hora a hora, com os dois pipelines rodando de forma
+independente e um `diff -r` entre as pastas de saída.
 
 | | |
 |---|---|
-| registros lidos | 3.599.866 |
-| registros calibrados escritos | 3.599.307 |
-| janelas demoduladas | 112.474 |
-| registros de apontamento | 3.420 |
-| CSV gerado | 225 MB |
+| horas comparadas | **32** |
+| divergências | **0** |
+| registros do detector | 100.200.805 |
+| registros de apontamento | 92.680 |
+| janelas demoduladas | ~3,1 milhões |
+| dados lidos | 3,8 GB |
 
-```bash
-diff -r SaidaCRAAM Saida
-```
+Três horas ficaram de fora: `2026-03-18` às 12, 13 e 14, onde o arquivo `.aux`
+não existe nos dados. A referência levanta erro e não produz saída nessas horas,
+então não há o que comparar. O pipeline daqui gera as duas tabelas que dependem
+só do `.rbd` — uma diferença de comportamento, não de resultado.
 
-Vazio. Os três arquivos com o mesmo SHA-256:
+### O que a varredura encontrou
 
-```
-051835db4a9ffe639821  2026-03-17T1800-deconv.csv
-38f2ab7d4a2ce5202759  2026-03-17T1800-rbd_adcu.csv
-977a469edf25dcc63783  2026-03-17T1800-rbd_cal.csv
-```
+Duas divergências reais, ambas invisíveis em qualquer comparação de uma hora só:
+
+**O filtro de husec no apontamento.** Ele aparece duas vezes no `HATS.py`, nas
+linhas 654 e 711, e só o segundo estava implementado. Dez das doze horas do dia
+17 divergiam por isso.
+
+**A formatação da coluna de tempo.** O pandas decide o formato pela coluna
+inteira; o `str()` de um datetime decide valor a valor. Nas horas em que alguma
+janela cai sobre um segundo exato, a referência escreve `.000000` e nós
+omitíamos a fração.
+
+As duas passaram despercebidas pelo mesmo motivo: a hora usada em todas as
+comparações anteriores, `2026-03-17T1800`, não tem registro de apontamento antes
+das 18:00 **e** nenhuma janela sobre segundo exato. Batia por coincidência, duas
+vezes seguidas.
 
 ## Contra o binário que o CRAAM distribui
 
