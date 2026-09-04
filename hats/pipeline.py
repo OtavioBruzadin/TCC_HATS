@@ -57,11 +57,13 @@ def write_calibrated(destination, rbd_path, schema, offset, limit=None):
 
 def write_deconvolved(destination, deconv, date_str):
     """`-deconv.csv`: a amplitude demodulada, com o tempo no centro da janela."""
-    husecs, amplitudes = deconv
+    husecs = [int(h) for h in deconv[0]]
+    amplitudes = deconv[1]
+    tempos = timebase.craam_datetime_column(date_str, husecs)
     return _write_table(
         destination, ["time", "husec", "amplitude"],
-        ([timebase.craam_datetime(date_str, int(h)), int(h), float(a)]
-         for h, a in zip(husecs, amplitudes)))
+        ([tempo, husec, float(a)]
+         for tempo, husec, a in zip(tempos, husecs, amplitudes)))
 
 
 def write_pointing(destination, aux_path, schema, limit=None):
@@ -86,14 +88,14 @@ def write_pointing(destination, aux_path, schema, limit=None):
     threshold = (int(hour[:2]) * constants.HUSEC_PER_HOUR
                  if hour and hour[:2].isdigit() else None)
 
+    mantidos = [values for values in records.iter_records(aux_path, schema, limit)
+                if threshold is None or values[index_of["husec"]] >= threshold]
+    tempos = timebase.craam_datetime_column(
+        date_str, [values[index_of["husec"]] for values in mantidos])
+
     def rows():
-        for values in records.iter_records(aux_path, schema, limit):
-            husec = values[index_of["husec"]]
-            if threshold is not None and husec < threshold:
-                continue
-            row = [values[index_of[f["name"]]] for f in schema["fields"]]
-            row.append(timebase.craam_datetime(date_str, husec))
-            yield row
+        for values, tempo in zip(mantidos, tempos):
+            yield [values[index_of[f["name"]]] for f in schema["fields"]] + [tempo]
 
     headers = [f["name"] for f in schema["fields"]] + ["time"]
     return _write_table(destination, headers, rows())

@@ -112,3 +112,24 @@ def craam_datetime(date_str, husec):
     whole_seconds = int(seconds)
     microseconds = int((seconds - whole_seconds) * 1e6)
     return _datetime(year, month, day, hours, minutes, whole_seconds, microseconds)
+
+
+def craam_datetime_column(date_str, husecs):
+    """
+    Formata uma coluna de tempo como o pandas faz ao gravar o CSV da referência.
+
+    A decisão do formato é da COLUNA, não de cada valor: se algum registro tem
+    microssegundos, todos saem com seis casas, inclusive os que caem em segundo
+    exato, que viram `.000000`. Se nenhum tem, nenhum sai com fração.
+
+    O `str()` de um datetime decide valor a valor e omite a fração quando ela é
+    zero — daí a divergência que só aparece nas horas em que alguma janela cai
+    exatamente sobre um segundo inteiro. Na hora das 18:00 de 2026-03-17 isso
+    nunca acontece, porque o passo de 320 husec a partir de 648000643 nunca
+    alcança um múltiplo de 10000; por isso a diferença passou despercebida.
+
+    Microssegundo é zero exatamente quando husec é múltiplo de 10000.
+    """
+    fractional = any(husec % constants.HUSEC_PER_SECOND for husec in husecs)
+    layout = "%Y-%m-%d %H:%M:%S.%f" if fractional else "%Y-%m-%d %H:%M:%S"
+    return [craam_datetime(date_str, husec).strftime(layout) for husec in husecs]

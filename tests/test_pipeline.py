@@ -182,10 +182,24 @@ class TestTables(TemporaryProject):
         self.assertEqual(len(linhas) - 1, total - 20)
 
     def test_timestamps_truncate_like_the_reference(self):
+        """O husec2dt() da referência trunca os microssegundos em ponto flutuante."""
         self.assertEqual(str(timebase.craam_datetime("2026-03-17", 648000643)),
                          "2026-03-17 18:00:00.064299")
-        self.assertEqual(str(timebase.craam_datetime("2026-03-17", 648000000)),
-                         "2026-03-17 18:00:00")
+
+    def test_time_column_formatting_is_decided_by_the_column(self):
+        """
+        O pandas formata a coluna inteira de um jeito só: se algum registro tem
+        microssegundos, todos saem com seis casas, inclusive os que caem em
+        segundo exato. O str() de um datetime decide valor a valor e omitiria a
+        fração nesses — divergência que só aparece nas horas em que alguma janela
+        cai sobre um segundo inteiro.
+        """
+        com_fracao = timebase.craam_datetime_column("2026-03-17", [648000000, 648000643])
+        self.assertEqual(com_fracao, ["2026-03-17 18:00:00.000000",
+                                      "2026-03-17 18:00:00.064299"])
+
+        sem_fracao = timebase.craam_datetime_column("2026-03-17", [648000000, 648010000])
+        self.assertEqual(sem_fracao, ["2026-03-17 18:00:00", "2026-03-17 18:00:01"])
 
     def test_floats_use_the_shortest_round_trip_repr(self):
         self.assertEqual(pipeline._cell(50.690450199999994), "50.690450199999994")
