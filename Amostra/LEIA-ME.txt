@@ -1,0 +1,24 @@
+AMOSTRA RECONSTRUÍDA — NÃO É O ARQUIVO ORIGINAL DO INSTRUMENTO
+===============================================================
+
+Serve para experimentar o pipeline sem depender dos dados reais:
+
+    make run-demo
+    make diff-demo
+
+Os arquivos foram remontados a partir de CSV exportados, e contêm apenas os
+1000 primeiros registros de cada um:
+
+  hats-2026-03-17T1800.rbd     1000 registros  (o original tem 3.599.866)
+  aux/hats-2026-03-17T1800.aux 1000 registros  (o original tem 3.420)
+  aux/hats-2026-03-17.ws       dia completo, mais 2 linhas de teste no fim
+
+Os VALORES são reais e vieram do instrumento. O que falta é o resto do arquivo.
+A demodulação sai com 9 janelas em vez das ~112.000 de uma hora completa.
+
+Uma comparação que passa aqui NÃO estabelece equivalência: duas divergências
+reais entre este pipeline e o do CRAAM ficaram escondidas por uma sessão inteira
+porque só apareciam em horas que esta amostra não cobre. Para valer, rode sobre
+os dados reais — veja o README, seção "Onde estão os dados".
+
+A estrutura é a do manual do CRAAM: os .rbd aqui, os auxiliares em aux/.

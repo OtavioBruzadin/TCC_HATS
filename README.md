@@ -40,23 +40,32 @@ make diff DAY=2026-03-18 HOUR=2000
 
 ### Onde estão os dados
 
-Sem configurar nada, usa o `Data/` do projeto, que traz uma amostra reconstruída
-de 1000 registros. Para os dados reais, aponte para a pasta deles de uma das duas
-formas:
+Uma vez, apontando para a pasta `data` do instrumento:
 
 ```bash
-make diff DATA="$HOME/.../Hats Data" HOUR=1900
+make config-data DATA="$HOME/.../Hats Data"
 ```
+
+Isso grava `local.mk`, que não é versionado. Depois disso os comandos acima
+funcionam sem mais nada. Alternativas: exportar `HATS_DATA_InputPath`, que é a
+variável do manual do CRAAM, ou passar `DATA=` em cada comando.
+
+**Não há queda silenciosa para a amostra.** Sem configuração, os comandos param e
+dizem o que fazer. Um padrão que usasse os 1000 registros de exemplo faria uma
+comparação passar sem provar nada — foi exatamente assim que duas divergências
+reais ficaram escondidas por uma sessão inteira de trabalho.
+
+### Experimentar sem os dados reais
 
 ```bash
-export HATS_DATA_InputPath="$HOME/.../Hats Data"
-make diff HOUR=1900
+make run-demo
+make diff-demo
 ```
 
-A segunda é a variável que o manual do CRAAM manda exportar na instalação — quem
-já configurou a máquina para o `HATS.py` não precisa fazer nada.
-
-Antes da primeira comparação, uma vez: `make setup-reference`.
+Usam `Amostra/`, com 1000 registros reais do instrumento remontados a partir de
+CSV. Servem para ver o pipeline funcionando; **não servem como validação** — a
+demodulação sai com 9 janelas em vez de ~112.000, e as horas que expuseram os
+dois defeitos não estão cobertas.
 
 ## As tabelas
 
