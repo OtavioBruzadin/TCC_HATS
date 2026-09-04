@@ -30,6 +30,35 @@ diff -r SaidaCRAAM Saida
 ```
 Sai vazio. `make diff` faz os três de uma vez.
 
+### Quanto, e não só se
+
+O `diff` responde "igual ou diferente". Para o número que se cita num texto:
+
+```bash
+make erro
+```
+
+```
+  2026-03-17T1800-rbd_cal.csv
+  --------------------------------------------------------------------------
+    coluna              linhas   diferentes          RMSE  erro abs máx  erro rel máx
+    golay              3599307            0  0.000000e+00  0.000000e+00  0.000000e+00
+    chopper            3599307            0  0.000000e+00  0.000000e+00  0.000000e+00
+    temp_hics          3599307            0  0.000000e+00  0.000000e+00  0.000000e+00
+    ...
+  ==========================================================================
+  3715201 linhas comparadas. Erro exatamente zero em todas as colunas.
+```
+
+Erro quadrático médio, erro absoluto e relativo máximos, viés e contagem de
+valores divergentes, coluna a coluna. As tabelas são percorridas em fluxo, então
+os 225 MB do `-rbd_cal.csv` não vão para a memória.
+
+A ferramenta foi conferida nas duas pontas: dá zero entre saídas idênticas, e
+recupera o valor certo quando um erro é injetado de propósito — 100 amplitudes
+perturbadas em 3×10⁻⁵ produzem `erro rel máx = 3.000000e-05` e RMSE
+1,05×10⁻⁴. Uma métrica que sempre dá zero não mede nada.
+
 Os dois processam **a mesma hora**, para que as pastas sejam comparáveis. Escolha
 com `DAY` e `HOUR`; para o dia inteiro há `make run-dia`, que não tem contraparte
 do outro lado e por isso não entra no `diff`.

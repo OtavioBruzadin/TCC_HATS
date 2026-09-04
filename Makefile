@@ -22,7 +22,7 @@ DATA    ?= $(HATS_DATA_InputPath)
 ZIP     ?= $(HOME)/Downloads/HATS_software.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-dia run-demo diff-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
+.PHONY: help test run run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
 
 help:
 	@echo ""
@@ -32,10 +32,12 @@ help:
 	@echo "    make run-dia             roda o NOSSO, o dia todo -> Saida/"
 	@echo "    make run-craam           roda o do CRAAM         -> SaidaCRAAM/"
 	@echo "    make diff                roda os dois e compara as duas pastas"
+	@echo "    make erro                mede o erro coluna a coluna: RMSE, máximos, viés"
 	@echo ""
 	@echo "  Sobre a amostra de 1000 registros, sem precisar dos dados reais"
 	@echo "    make run-demo            roda o NOSSO sobre Amostra/"
 	@echo "    make diff-demo           compara os dois sobre Amostra/"
+	@echo "    make erro-demo           mede o erro sobre Amostra/"
 	@echo ""
 	@echo "    make test                suíte de testes"
 	@echo "    make bench               desempenho dos backends"
@@ -63,6 +65,15 @@ run-dia: check-data
 
 run-demo:
 	@$(MAKE) --no-print-directory run DATA=$(AMOSTRA)
+
+# Roda os dois e mede o erro. O diff diz "igual ou diferente"; isto diz quanto.
+erro: check-reference check-data
+	@$(MAKE) --no-print-directory run >/dev/null
+	@$(MAKE) --no-print-directory run-craam >/dev/null
+	@$(PYTHON) tools/erro.py SaidaCRAAM Saida
+
+erro-demo:
+	@$(MAKE) --no-print-directory erro DATA=$(AMOSTRA)
 
 diff-demo:
 	@$(MAKE) --no-print-directory diff DATA=$(AMOSTRA)

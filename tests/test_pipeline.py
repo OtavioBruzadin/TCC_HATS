@@ -206,6 +206,35 @@ class TestTables(TemporaryProject):
         self.assertEqual(pipeline._cell(4.6044), "4.6044")
         self.assertEqual(pipeline._cell(648000643), "648000643")
 
+    def test_error_tool_reports_zero_and_detects_injected_error(self):
+        """
+        Uma métrica que sempre dá zero não mede nada. O teste confere as duas
+        pontas: erro zero entre cópias idênticas, e erro correto quando um valor
+        é alterado de propósito.
+        """
+        import subprocess
+        out = self._run()
+        copia = self.tmp / "copia"
+        shutil.copytree(out, copia)
+
+        ferramenta = [sys.executable, str(PROJECT_ROOT / "tools" / "erro.py")]
+        igual = subprocess.run(ferramenta + [str(out), str(copia)],
+                               capture_output=True, text=True)
+        self.assertEqual(igual.returncode, 0)
+        self.assertIn("Erro exatamente zero", igual.stdout)
+
+        alvo = copia / "2026-03-17T1800-deconv.csv"
+        linhas = alvo.read_text(encoding="utf-8").splitlines()
+        campos = linhas[1].split(",")
+        campos[2] = repr(float(campos[2]) * 1.5)
+        linhas[1] = ",".join(campos)
+        alvo.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+
+        diferente = subprocess.run(ferramenta + [str(out), str(copia)],
+                                   capture_output=True, text=True)
+        self.assertEqual(diferente.returncode, 1)
+        self.assertIn("Há divergências", diferente.stdout)
+
     def test_tables_are_utf8(self):
         for path in self._run().glob("*.csv"):
             path.read_text(encoding="utf-8")
