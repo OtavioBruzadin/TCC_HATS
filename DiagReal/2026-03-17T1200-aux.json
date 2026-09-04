@@ -1,0 +1,83 @@
+{
+  "file": "hats-2026-03-17T1200.aux",
+  "total_records": 3420,
+  "valid_records": 3302,
+  "stale_records": 118,
+  "stale_fraction": 0.03450292397660819,
+  "stale_lag": {
+    "mean_seconds": 1053.8078996915349,
+    "sd_seconds": 0.040185822650005504,
+    "min_seconds": 1053.7090426126313,
+    "max_seconds": 1053.8833201610687
+  },
+  "stale_record_note": "Registros com jd == 0 trazem apontamento de um instante anterior enquanto o husec está correto. Ficam fora de todas as estatísticas.",
+  "opmode_counts_valid": {
+    "0": 3300,
+    "8": 1,
+    "100": 1
+  },
+  "opmode_counts_stale": {
+    "0": 3,
+    "7": 60,
+    "8": 55
+  },
+  "opmode_names": {
+    "0": "tracking",
+    "7": "right_ascension_scan",
+    "8": "declination_scan",
+    "10": "skydip"
+  },
+  "object_counts_valid": {
+    "11": 3302
+  },
+  "statistics_valid": {
+    "elevation": {
+      "count": 3302,
+      "min": 16.391661822784066,
+      "max": 30.09107085919277,
+      "mean": 22.644715143908943,
+      "sd": 3.639725670803753
+    },
+    "azimuth": {
+      "count": 3302,
+      "min": 70.66614657003808,
+      "max": 81.02193756073564,
+      "mean": 76.52285456546035,
+      "sd": 2.7064129093038316
+    },
+    "declination": {
+      "count": 3302,
+      "min": -1.2319288353647266,
+      "max": -1.190164227207589,
+      "mean": -1.2156870094363095,
+      "sd": 0.009485411084586759
+    },
+    "right_ascension_deg": {
+      "count": 3302,
+      "min": 354.54253426788637,
+      "max": 359.63161173801035,
+      "mean": 357.12220290950665,
+      "sd": 0.10260981583793291
+    }
+  },
+  "unit_corrections": {
+    "right_ascension": {
+      "declared_in_xml": "degrees",
+      "actual": "hours",
+      "corrected_field": "right_ascension_deg",
+      "factor": 15.0
+    },
+    "ra_rate": {
+      "declared_in_xml": "degrees/s",
+      "actual": "arcsec/s",
+      "corrected_field": "ra_rate_deg_s",
+      "factor": 0.0002777777777777778
+    },
+    "dec_rate": {
+      "declared_in_xml": "degrees/s",
+      "actual": "arcsec/s",
+      "corrected_field": "dec_rate_deg_s",
+      "factor": 0.0002777777777777778
+    }
+  }
+}

@@ -40,16 +40,15 @@ if [ ! -x "$ROOT/Docs/upstream/HATS_fft" ]; then
     exit 1
 fi
 
-if [ ! -d "$ROOT/Data/$DAY" ]; then
-    echo "Não há dados em Data/$DAY."
-    echo "Dias disponíveis:"
-    ls "$ROOT/Data" 2>/dev/null | grep '^[0-9]' | sed 's/^/  /' || echo "  nenhum"
+DATA=${HATS_DATA_InputPath:-"$ROOT/Data"}
+if [ ! -f "$DATA/hats-${DAY}T${HOUR}.rbd" ]; then
+    echo "Não encontrei hats-${DAY}T${HOUR}.rbd em $DATA"
     exit 1
 fi
 
-HATSXMLPATH="$ROOT/XMLTables"
-HATS_DATA_InputPath="$ROOT/Data/$DAY"
-HATS_WS_InputPath="$ROOT/Data/$DAY/aux"
+HATSXMLPATH=${HATSXMLPATH:-"$ROOT/XMLTables"}
+HATS_DATA_InputPath="$DATA"
+HATS_WS_InputPath="$DATA/aux"
 HATS_FFTProgram="$ROOT/Docs/upstream/HATS_fft"
 PYTHONPATH="$ROOT/Docs/upstream"
 export HATSXMLPATH HATS_DATA_InputPath HATS_WS_InputPath HATS_FFTProgram PYTHONPATH

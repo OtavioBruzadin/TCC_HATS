@@ -97,8 +97,18 @@ def write_ws(path, rows=20):
 
 
 def build_day(root, date="2026-03-17", hour="1800", **kwargs):
-    """Monta uma árvore Data/ completa e devolve os caminhos criados."""
-    day_dir = root / "Data" / date
+    """
+    Monta a árvore de dados que o manual do CRAAM descreve.
+
+        data/
+          hats-<data>T<hora>.rbd
+          aux/
+            hats-<data>T<hora>.aux
+            hats-<data>.ws
+
+    Sem nível por dia: o dia vem do nome do arquivo.
+    """
+    day_dir = root / "Data"
     aux_dir = day_dir / "aux"
     aux_dir.mkdir(parents=True, exist_ok=True)
 

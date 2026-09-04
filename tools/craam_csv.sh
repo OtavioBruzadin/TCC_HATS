@@ -25,9 +25,9 @@ fi
 
 mkdir -p "$OUT"
 
-HATSXMLPATH="$ROOT/XMLTables"
-HATS_DATA_InputPath="$ROOT/Data/$DAY"
-HATS_WS_InputPath="$ROOT/Data/$DAY/aux"
+HATSXMLPATH=${HATSXMLPATH:-"$ROOT/XMLTables"}
+HATS_DATA_InputPath=${HATS_DATA_InputPath:-"$ROOT/Data"}
+HATS_WS_InputPath=${HATS_WS_InputPath:-"$HATS_DATA_InputPath/aux"}
 HATS_FFTProgram="$ROOT/Docs/upstream/HATS_fft"
 PYTHONPATH="$ROOT/Docs/upstream"
 export HATSXMLPATH HATS_DATA_InputPath HATS_WS_InputPath HATS_FFTProgram PYTHONPATH

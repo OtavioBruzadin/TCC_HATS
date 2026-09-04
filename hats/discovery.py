@@ -1,17 +1,22 @@
 """Criação da estrutura de pastas e descoberta dos arquivos de dados no disco."""
 
 from collections import defaultdict
+from pathlib import Path
 
 from hats import timebase
 
-DATA_README = """Layout esperado:
+DATA_README = """Layout esperado, o mesmo que o manual do CRAAM descreve:
 
-Data/
-  2026-03-17/
-    hats-2026-03-17T1800.rbd
-    aux/
-      hats-2026-03-17T1800.aux
-      hats-2026-03-17.ws
+data/
+  hats-2026-03-17T1800.rbd
+  hats-2026-03-17T1900.rbd
+  aux/
+    hats-2026-03-17T1800.aux
+    hats-2026-03-17T1900.aux
+    hats-2026-03-17.ws
+
+Os .rbd ficam todos juntos aqui; o dia vem do nome do arquivo, não de pasta.
+Aponte HATS_DATA_InputPath ou --data-dir para este diretório.
 """
 
 XML_README = """Arquivos de formato do CRAAM:
@@ -32,6 +37,7 @@ AUX_UNIT_FIXES em hats/schema.py.
 
 def ensure_structure(project_root, data_dir="Data", output_dir="Saida",
                      xml_dir="XMLTables", diagnostics_dir="Diagnostico"):
+    """`data_dir` e `xml_dir` podem vir como Path já resolvido ou como nome relativo."""
     """
     Cria as pastas do projeto se não existirem e devolve os caminhos.
 
@@ -39,12 +45,16 @@ def ensure_structure(project_root, data_dir="Data", output_dir="Saida",
     com ela seja um `diff -r` limpo entre dois diretórios. Os diagnósticos vão
     para outra pasta justamente por isso.
     """
+    def under(value):
+        path = Path(value)
+        return path if path.is_absolute() else (project_root / path)
+
     paths = {
         "project_root": project_root,
-        "data_dir": project_root / data_dir,
-        "output_dir": project_root / output_dir,
-        "diagnostics_dir": project_root / diagnostics_dir,
-        "xml_dir": project_root / xml_dir,
+        "data_dir": under(data_dir),
+        "output_dir": under(output_dir),
+        "diagnostics_dir": under(diagnostics_dir),
+        "xml_dir": under(xml_dir),
     }
     for key, path in paths.items():
         if key != "project_root":
@@ -61,29 +71,43 @@ def ensure_structure(project_root, data_dir="Data", output_dir="Saida",
 
 def build_day_index(data_dir):
     """
-    Mapeia a pasta de dados: um dia por diretório, os arquivos agrupados por hora.
+    Mapeia o diretório de dados, agrupando por dia e por hora.
 
-    Os .aux e .ws ficam num subdiretório `aux/`, seguindo a convenção do CRAAM.
-    O .ws é diário, então entra sob a chave 'daily'.
+    A estrutura é a que o manual do CRAAM descreve, e é a que o instrumento
+    entrega:
+
+        root
+          |__data          <- os .rbd, todos juntos
+          |    |__aux      <- os .aux e os .ws
+          |__log
+
+    O dia vem do nome do arquivo, não de pasta nenhuma: a convenção é
+    `hats-YYYY-MM-DDTHH00.rbd`, com os minutos sempre em 00, e um par
+    RBD/AUX novo a cada hora. Não há nível por dia — ele seria redundante.
+
+    `data_dir` é o `data/` do diagrama, ou seja o mesmo caminho que a variável
+    HATS_DATA_InputPath recebe.
     """
-    index = {}
-    for day_dir in sorted(data_dir.iterdir()):
-        if not day_dir.is_dir():
-            continue
+    aux_dir = data_dir / "aux"
+    index = defaultdict(lambda: {"day_dir": data_dir, "aux_dir": aux_dir,
+                                 "hours": defaultdict(dict)})
 
-        aux_dir = day_dir / "aux"
-        hours = defaultdict(dict)
-        for path in sorted(day_dir.glob("*.rbd")):
-            hours[timebase.hour_from_filename(path) or "unknown"]["rbd"] = path
-        if aux_dir.exists():
-            for path in sorted(aux_dir.glob("*.aux")):
-                hours[timebase.hour_from_filename(path) or "unknown"]["aux"] = path
-            for path in sorted(aux_dir.glob("*.ws")):
-                hours["daily"]["ws"] = path
+    for path in sorted(data_dir.glob("*.rbd")):
+        day = timebase.date_from_filename(path)
+        if day:
+            index[day]["hours"][timebase.hour_from_filename(path) or "unknown"]["rbd"] = path
 
-        index[day_dir.name] = {
-            "day_dir": day_dir,
-            "aux_dir": aux_dir,
-            "hours": dict(sorted(hours.items(), key=lambda item: item[0])),
-        }
-    return index
+    if aux_dir.exists():
+        for path in sorted(aux_dir.glob("*.aux")):
+            day = timebase.date_from_filename(path)
+            if day:
+                index[day]["hours"][timebase.hour_from_filename(path) or "unknown"]["aux"] = path
+        for path in sorted(aux_dir.glob("*.ws")):
+            day = timebase.date_from_filename(path)
+            if day:
+                index[day]["hours"]["daily"]["ws"] = path
+
+    return {day: {"day_dir": value["day_dir"],
+                  "aux_dir": value["aux_dir"],
+                  "hours": dict(sorted(value["hours"].items()))}
+            for day, value in sorted(index.items())}

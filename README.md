@@ -143,6 +143,30 @@ arquivo é o **apontamento**, e o sinal bruto não sobrevive à chamada. O resul
 é reproduzido; a escrita descartada não, já que o conteúdo final é o mesmo e
 custaria centenas de MB por hora.
 
+## Validado sobre uma hora completa
+
+Não é uma amostra: o arquivo `hats-2026-03-17T1800.rbd` inteiro, do instrumento.
+
+| | |
+|---|---|
+| registros lidos | 3.599.866 |
+| registros calibrados escritos | 3.599.307 |
+| janelas demoduladas | 112.474 |
+| registros de apontamento | 3.420 |
+| CSV gerado | 225 MB |
+
+```bash
+diff -r SaidaCRAAM Saida
+```
+
+Vazio. Os três arquivos com o mesmo SHA-256:
+
+```
+051835db4a9ffe639821  2026-03-17T1800-deconv.csv
+38f2ab7d4a2ce5202759  2026-03-17T1800-rbd_adcu.csv
+977a469edf25dcc63783  2026-03-17T1800-rbd_cal.csv
+```
+
 ## Contra o binário que o CRAAM distribui
 
 Compilar o fonte deles não é a mesma coisa que reproduzir o binário deles. Com as
@@ -195,19 +219,44 @@ sozinho e o resultado é o mesmo — igualdade bit a bit exigida por teste.
 
 ## Estrutura de dados
 
-`Data/` não é versionada:
+A mesma que o manual do CRAAM descreve, e a que o instrumento entrega:
 
 ```
-Data/
-└── 2026-03-17/
-    ├── hats-2026-03-17T1800.rbd
-    └── aux/
-        └── hats-2026-03-17T1800.aux
+data/
+  hats-2026-03-17T1800.rbd
+  hats-2026-03-17T1900.rbd
+  ...
+  aux/
+    hats-2026-03-17T1800.aux
+    hats-2026-03-17.ws
 ```
 
-Há uma amostra reconstruída de 1000 registros em `Data/2026-03-17/`; veja o
-`LEIA-ME.txt` de lá. O `Data/` completo está no Drive:
-https://drive.google.com/drive/folders/1_aWg-CdfVP4UcG06CKtlhWi68MCRzkFz?usp=sharing
+Os `.rbd` ficam todos juntos; o dia vem do nome do arquivo, não de pasta. Não há
+nível por dia — ele seria redundante, já que a convenção é
+`hats-YYYY-MM-DDTHH00.rbd`, com os minutos sempre em 00 e um par RBD/AUX novo a
+cada hora.
+
+### Variáveis de ambiente
+
+As mesmas do manual. Quem configurou a máquina seguindo o CRAAM roda este
+pipeline sem passar flag nenhuma:
+
+```bash
+export HATS_DATA_InputPath="$HOME/.../Hats Data"
+export HATSXMLPATH="$PWD/XMLTables"
+```
+
+```bash
+python3 hats_report.py --day 2026-03-17 --hour 1800
+```
+
+| variável | equivale a |
+|---|---|
+| `HATS_DATA_InputPath` | `--data-dir` |
+| `HATSXMLPATH` | `--xml-dir` |
+
+As flags, quando dadas, têm precedência. `HATS_FFTProgram` não se aplica: aqui a
+demodulação roda em processo, sem lançar binário externo.
 
 ## Projeto irmão
 

@@ -1,0 +1,105 @@
+{
+  "file": "hats-2026-03-17T1100.rbd",
+  "total_records_read": 656389,
+  "records_dropped_before_hour": 3082,
+  "dropped_note": "A referência descarta os registros anteriores à hora nominal. Eles têm `sample` e `husec` contínuos, ou seja são dados bons; o descarte é reproduzido por fidelidade, e contado aqui.",
+  "integrity": {
+    "sample_number_leaps": 1,
+    "husec_leaps": 1
+  },
+  "statistics_adcu": {
+    "golay": {
+      "count": 656389,
+      "min": -304423,
+      "max": 312036,
+      "mean": 14.923554477603982,
+      "sd": 171639.54153016093
+    },
+    "chopper": {
+      "count": 656389,
+      "min": -971531,
+      "max": 1031371,
+      "mean": -303.4105827489492,
+      "sd": 340383.6871134963
+    },
+    "temp_hics": {
+      "count": 656389,
+      "min": 498634,
+      "max": 557220,
+      "mean": 533555.9918234461,
+      "sd": 14817.19682475914
+    },
+    "temp_env": {
+      "count": 656389,
+      "min": 583042,
+      "max": 717966,
+      "mean": 615516.319039472,
+      "sd": 25884.058916822174
+    },
+    "temp_golay": {
+      "count": 656389,
+      "min": 407860,
+      "max": 2693609,
+      "mean": 590482.1105548692,
+      "sd": 208286.55678382827
+    }
+  },
+  "statistics_calibrated": {
+    "golay": {
+      "count": 656389,
+      "min": -351.304142,
+      "max": 360.08954400000005,
+      "mean": 0.017221781867154996,
+      "sd": 198.07203092580573
+    },
+    "chopper": {
+      "count": 656389,
+      "min": -2265.7732300000002,
+      "max": 2400.98843,
+      "mean": -2.8129466578050515,
+      "sd": 793.0939909744463
+    },
+    "temp_hics": {
+      "count": 656389,
+      "min": 14.9221566,
+      "max": 16.673878000000002,
+      "mean": 15.966324155521038,
+      "sd": 0.44303418506029824
+    },
+    "temp_env": {
+      "count": 656389,
+      "min": 17.4459558,
+      "max": 21.4801834,
+      "mean": 18.416937939280213,
+      "sd": 0.773933361612983
+    },
+    "temp_golay": {
+      "count": 656389,
+      "min": 12.208013999999999,
+      "max": 80.5519091,
+      "mean": 17.66841510559059,
+      "sd": 6.227768047836465
+    }
+  },
+  "units_calibrated": {
+    "golay": "mV",
+    "chopper": "mV",
+    "temp_hics": "C",
+    "temp_env": "C",
+    "temp_golay": "C"
+  },
+  "demodulation": {
+    "windows": 20508,
+    "output_rate_hz": 31.25,
+    "amplitude": {
+      "count": 20508,
+      "min": 11.504731128904071,
+      "max": 367.7218678772419,
+      "mean": 262.5283533948607,
+      "sd": 87.25331100773137
+    },
+    "unit": "mV",
+    "first_husec": 424094092,
+    "last_husec": 431997852
+  }
+}
