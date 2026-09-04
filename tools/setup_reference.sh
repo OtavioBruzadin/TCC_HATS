@@ -63,9 +63,18 @@ static inline void fftw_destroy_plan(fftw_plan p) { (void)p; }
 #endif
 STUB
 
-# -ffp-contract=off desliga a fusão de multiplicação e soma. Sem isso o
-# compilador altera o arredondamento e a saída do C deixa de ser reproduzível
-# bit a bit — verificado: com FMA, 0 de 9 janelas batem; sem, 9 de 9.
+# -ffp-contract=off desliga a fusão de multiplicação e soma.
+#
+# Não é uma licença poética: é o que faz esta compilação corresponder ao binário
+# que o CRAAM distribui. O HATS_fft do HATS_software.zip é ELF Linux x86-64 e
+# não contém nenhuma instrução FMA — verificado por objdump, zero ocorrências de
+# vfmadd no binário inteiro —, porque o gcc em x86-64 sem -march não emite FMA.
+# Em arm64 a FMA é baseline e o compilador a usa por padrão, o que altera o
+# arredondamento.
+#
+# Verificado executando o binário original sob emulação x86-64: a saída dele bate
+# bit a bit com esta compilação, 9 de 9 janelas. Compilando com as flags que o
+# cabeçalho do HATS_fft.c indica (-Wall -g, sem esta), batem 0 de 9.
 (cd "$BUILD" && cc -O2 -ffp-contract=off -I. windowed_dft.c HATS_fft.c -lm -o HATS_fft 2>/dev/null)
 cp "$BUILD/HATS_fft" "$UPSTREAM/HATS_fft"
 chmod +x "$UPSTREAM/HATS_fft"

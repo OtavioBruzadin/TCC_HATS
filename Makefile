@@ -8,9 +8,10 @@ REFVENV ?= .refvenv
 REFPY    = $(REFVENV)/bin/python
 DAY     ?= 2026-03-17
 HOUR    ?= 1800
+ZIP     ?= $(HOME)/Downloads/HATS_software.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-craam diff clean bench bench-craam craam-shell setup-reference check-reference
+.PHONY: help test run run-craam diff clean bench bench-craam craam-shell verify-binario setup-reference check-reference
 
 help:
 	@echo ""
@@ -24,6 +25,7 @@ help:
 	@echo "    make bench               desempenho dos backends"
 	@echo "    make bench-craam         idem, incluindo o HATS.py do CRAAM"
 	@echo "    make craam-shell         sessão Python com o HATS.py deles carregado"
+	@echo "    make verify-binario      confronta com o binário ELF que o CRAAM distribui"
 	@echo "    make clean               apaga Saida/ e SaidaCRAAM/"
 	@echo ""
 	@echo "    make setup-reference     monta o ambiente do CRAAM (venv + HATS_fft)"
@@ -55,6 +57,9 @@ bench:
 
 bench-craam: check-reference
 	$(REFPY) tools/benchmark.py --with-craam
+
+verify-binario: check-reference
+	tools/verify_binary.sh $(ZIP)
 
 craam-shell: check-reference
 	tools/craam_shell.sh $(DAY) $(HOUR)

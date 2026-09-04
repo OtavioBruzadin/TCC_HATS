@@ -123,8 +123,10 @@ fiel, 9 de 9.
 
 **4. Compilar o `HATS_fft` com `-ffp-contract=off`.** Sem isso o compilador funde
 multiplicação e soma, muda o arredondamento e a saída deixa de ser reproduzível:
-com FMA, 0 de 9 janelas batem; sem, 9 de 9. O `setup_reference.sh` já compila
-assim.
+com FMA, 0 de 9 janelas batem; sem, 9 de 9.
+
+Isso não é escolha arbitrária, e sim o que faz a compilação corresponder ao
+binário real deles — ver a seção seguinte.
 
 **5. Truncar os carimbos de tempo como o `husec2dt()` da referência.** O cálculo
 dos microssegundos passa por ponto flutuante: para o husec 648000643 o valor
@@ -140,6 +142,36 @@ do detector, a segunda grava o apontamento por cima. O conteúdo final desse
 arquivo é o **apontamento**, e o sinal bruto não sobrevive à chamada. O resultado
 é reproduzido; a escrita descartada não, já que o conteúdo final é o mesmo e
 custaria centenas de MB por hora.
+
+## Contra o binário que o CRAAM distribui
+
+Compilar o fonte deles não é a mesma coisa que reproduzir o binário deles. Com as
+flags que o cabeçalho do `HATS_fft.c` indica (`-Wall -g`), numa máquina arm64, o
+resultado difere em **todas** as janelas — porque a FMA é baseline em ARM e o
+compilador a usa por padrão.
+
+O binário distribuído no `HATS_software.zip` é ELF Linux x86-64 e **não contém
+nenhuma instrução FMA** (verificado por `objdump`: zero ocorrências de `vfmadd`
+no binário inteiro), porque o gcc em x86-64 sem `-march` não as emite.
+
+```bash
+make verify-binario
+```
+
+Executa o binário original sob emulação x86-64 num container e confronta:
+
+```
+    instruções FMA: 0
+    janelas: 9
+    bit a bit iguais: 9/9
+
+    A nossa implementação reproduz o binário distribuído pelo CRAAM,
+    bit a bit, em todas as janelas.
+```
+
+Exige docker e o `HATS_software.zip` (padrão: `~/Downloads/`, ou passe
+`ZIP=/caminho`). É a evidência mais forte do projeto: não estamos comparando com
+uma compilação nossa do código deles, e sim com o executável que eles publicaram.
 
 ## O pacote
 
