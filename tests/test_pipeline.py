@@ -138,7 +138,7 @@ class TestTables(TemporaryProject):
                          sorted(path.name for path in out.glob("*.csv")))
 
     def test_diagnostics_go_to_their_own_folder(self):
-        self._run()
+        self._run("--diagnostico")
         folder = self.tmp / "Diagnostico"
         self.assertEqual(sorted(path.name for path in folder.glob("*.json")),
                          ["2026-03-17-ws.json",
@@ -148,7 +148,7 @@ class TestTables(TemporaryProject):
     def test_diagnostics_report_what_the_reference_hides(self):
         """Os descartados, os defasados e as unidades corrigidas."""
         import json
-        self._run()
+        self._run("--diagnostico")
         folder = self.tmp / "Diagnostico"
 
         detector = json.loads((folder / "2026-03-17T1800-rbd.json").read_text(encoding="utf-8"))
@@ -160,9 +160,15 @@ class TestTables(TemporaryProject):
         self.assertIsNotNone(pointing["stale_lag"])
         self.assertEqual(pointing["unit_corrections"]["right_ascension"]["actual"], "hours")
 
-    def test_diagnostics_can_be_skipped(self):
-        self._run("--sem-diagnostico")
-        self.assertFalse(list((self.tmp / "Diagnostico").glob("*.json")))
+    def test_diagnostics_are_opt_in(self):
+        """
+        O padrão grava só as tabelas da referência. Os relatórios custam uma
+        passada a mais sobre o arquivo — cerca de 8 s por hora de dados —, o que
+        deixaria o pipeline mais lento que o do CRAAM ponta a ponta.
+        """
+        self._run()
+        folder = self.tmp / "Diagnostico"
+        self.assertFalse(folder.exists() and list(folder.glob("*.json")))
 
     def test_pointing_also_drops_records_before_the_nominal_hour(self):
         """

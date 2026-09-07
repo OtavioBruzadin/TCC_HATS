@@ -135,7 +135,10 @@ as tabelas são geradas.
 
 ## Desempenho
 
-Uma hora de dados: 3.600.000 registros, 137 MB. Melhor de três execuções.
+Uma hora de dados: 3.600.000 registros, 137 MB de entrada, 242 MB de CSV gerado.
+MacBook arm64, Python 3.9.6.
+
+### Processamento — leitura, calibração e demodulação
 
 ```bash
 make bench-craam
@@ -143,13 +146,33 @@ make bench-craam
 
 | implementação | tempo | memória |
 |---|---|---|
-| `HATS.py` do CRAAM (numpy + binário C) | 1,11 s | 813 MB |
-| pacote, backend stdlib | 4,29 s | 64 MB |
-| **pacote, backend numpy** | **0,06 s** | **84 MB** |
+| `HATS.py` do CRAAM (numpy + binário C) | 1,08 s | 859 MB |
+| pacote, backend stdlib | 4,04 s | 64 MB |
+| **pacote, backend numpy** | **0,07 s** | **83 MB** |
 
-Com numpy, **~18× mais rápido** usando **~10× menos memória**. Sem numpy é ~4×
-mais lento, que é o preço de não ter dependência alguma — o pacote roda com a
-biblioteca padrão e usa numpy só se ele estiver instalado.
+**~16× mais rápido** usando **~10× menos memória**. Sem numpy é ~3,7× mais lento,
+que é o preço de não ter dependência alguma.
+
+### Ponta a ponta — incluindo escrever as tabelas
+
+Melhor de três, com `make run` contra `make run-craam`:
+
+| | tempo |
+|---|---|
+| `HATS.py` do CRAAM | 15,6 – 16,2 s |
+| **este pacote** | **14,4 – 14,6 s** |
+
+Cerca de **9%**. A diferença encolhe porque **a serialização em CSV domina o
+tempo total**: 242 MB de texto, escritos em Python dos dois lados. O
+processamento, onde está o ganho de 16×, é menos de 1% do trabalho.
+
+Vale registrar como resultado: **o gargalo do pipeline do HATS é o formato de
+saída, não o cálculo.** Um formato binário ou colunar mudaria a ordem de grandeza
+do tempo total; otimizar mais a demodulação, não.
+
+Os relatórios de diagnóstico são opcionais (`--diagnostico`, ou `make run-diag`)
+justamente por isso: custam uma passada a mais, cerca de 8 s por hora, o que
+inverteria a comparação.
 
 ### De onde vem o ganho
 

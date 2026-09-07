@@ -57,7 +57,9 @@ def ensure_structure(project_root, data_dir="Data", output_dir="Saida",
         "xml_dir": under(xml_dir),
     }
     for key, path in paths.items():
-        if key != "project_root":
+        # A pasta de diagnóstico só nasce quando os relatórios são pedidos; criá-la
+        # vazia sugeriria que algo deveria estar lá.
+        if key not in ("project_root", "diagnostics_dir", "data_dir"):
             path.mkdir(parents=True, exist_ok=True)
 
     readme = paths["data_dir"] / "README.txt"

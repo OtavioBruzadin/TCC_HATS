@@ -3,7 +3,13 @@
 # Os alvos que executam o código do CRAAM precisam do ambiente de referência:
 # rode `make setup-reference` uma vez.
 
-PYTHON  ?= python3
+# Interpretador. O pacote roda com a biblioteca padrão, mas fica cerca de 16x
+# mais rápido no processamento quando numpy está disponível — por isso, quando o
+# python3 do sistema não tem numpy e existe um ambiente com ele, o segundo é
+# preferido. Passe PYTHON= para escolher à mão.
+PYTHON  ?= $(shell python3 -c "import numpy" >/dev/null 2>&1 && echo python3 \
+             || { test -x .refvenv/bin/python && echo .refvenv/bin/python; } \
+             || echo python3)
 REFVENV ?= .refvenv
 REFPY    = $(REFVENV)/bin/python
 DAY     ?= 2026-03-17
@@ -22,13 +28,14 @@ DATA    ?= $(HATS_DATA_InputPath)
 ZIP     ?= $(HOME)/Downloads/HATS_software.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
+.PHONY: help test run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
 
 help:
 	@echo ""
 	@echo "  Uso: make <alvo>"
 	@echo ""
 	@echo "    make run                 roda o NOSSO, uma hora  -> Saida/"
+	@echo "    make run-diag            idem, com os relatórios -> Diagnostico/"
 	@echo "    make run-dia             roda o NOSSO, o dia todo -> Saida/"
 	@echo "    make run-craam           roda o do CRAAM         -> SaidaCRAAM/"
 	@echo "    make diff                roda os dois e compara as duas pastas"
@@ -49,7 +56,7 @@ help:
 	@echo "    make setup-reference     monta o ambiente do CRAAM (venv + HATS_fft)"
 	@echo "    make config-data DATA=... grava o caminho dos dados em local.mk"
 	@echo ""
-	@echo "  Variáveis: DAY=$(DAY)  HOUR=$(HOUR)"
+	@echo "  Variáveis: DAY=$(DAY)  HOUR=$(HOUR)  PYTHON=$(PYTHON)"
 	@echo "             DATA=$(if $(DATA),$(DATA),<não configurado — veja make config-data>)"
 	@echo ""
 
@@ -58,6 +65,10 @@ help:
 run: check-data
 	@rm -rf Saida
 	$(PYTHON) hats_report.py --data-dir "$(DATA)" --day $(DAY) --hour $(HOUR)
+
+run-diag: check-data
+	@rm -rf Saida Diagnostico
+	$(PYTHON) hats_report.py --data-dir "$(DATA)" --day $(DAY) --hour $(HOUR) --diagnostico
 
 run-dia: check-data
 	@rm -rf Saida

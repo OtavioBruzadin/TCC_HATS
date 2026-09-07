@@ -37,9 +37,10 @@ def build_parser():
     processing.add_argument("--fft-steps", type=int, default=constants.STEPS)
     processing.add_argument("--fft-target-hz", type=float, default=constants.TARGET_FREQUENCY)
     processing.add_argument("--fft-sampling-hz", type=float, default=constants.SAMPLING_FREQUENCY)
-    processing.add_argument("--sem-diagnostico", dest="sem_diagnostico", action="store_true",
-                            help="Pula os relatórios JSON. Eles exigem uma passada a mais "
-                                 "sobre o arquivo e não fazem parte da saída reproduzida.")
+    processing.add_argument("--diagnostico", dest="diagnostico", action="store_true",
+                            help="Também grava os relatórios JSON. Eles não fazem parte da "
+                                 "saída reproduzida e exigem uma passada a mais sobre o "
+                                 "arquivo — cerca de 8 s por hora de dados.")
     processing.add_argument("--backend", choices=["auto", "numpy", "stdlib"], default="auto")
 
     info = parser.add_argument_group("informação")
@@ -136,7 +137,7 @@ def main(argv=None):
                 print("    {}".format(path.name))
             total += len(written)
 
-            if not args.sem_diagnostico:
+            if args.diagnostico:
                 if files.get("rbd"):
                     diagnostics.write_json(
                         diagnostics.rbd_diagnostics(files["rbd"], schemas["rbd"],
@@ -147,7 +148,7 @@ def main(argv=None):
                         diagnostics.aux_diagnostics(files["aux"], schemas["aux"], options),
                         paths["diagnostics_dir"] / "{}-aux.json".format(stem))
 
-        if not args.sem_diagnostico:
+        if args.diagnostico:
             weather_file = day_info["hours"].get("daily", {}).get("ws")
             if weather_file:
                 diagnostics.write_json(
@@ -155,6 +156,6 @@ def main(argv=None):
                     paths["diagnostics_dir"] / "{}-ws.json".format(day_key))
 
     print("{} tabela(s) em {}".format(total, paths["output_dir"]))
-    if not args.sem_diagnostico:
+    if args.diagnostico:
         print("diagnóstico em {}".format(paths["diagnostics_dir"]))
     return 0
