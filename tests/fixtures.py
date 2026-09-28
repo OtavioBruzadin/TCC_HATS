@@ -121,3 +121,32 @@ def build_day(root, date="2026-03-17", hour="1800", **kwargs):
     write_ws(ws_path)
     return {"root": root, "day_dir": day_dir, "rbd": rbd_path, "aux": aux_path,
             "ws": ws_path, "samples": samples, "aux_records": records, "aux_stale": stale}
+
+
+# --- formato antigo, de 26 bytes ----------------------------------------------
+#
+# Vigente entre 2021-08-01 e 2021-10-25, descrito pelo HATSDataFormat-110.xml. Tem
+# seis campos em vez de nove, e o canal do detector se chama `adcu`, não `golay`.
+# Existe aqui para o reader poder ser testado contra os dois formatos sem precisar
+# versionar um binário real de 7 MB.
+
+RBD_110_FORMAT = "<IIHQii"
+RBD_110_RECORD_SIZE = 26
+
+
+def write_rbd_110(path, samples=500, amplitude_mv=100.0, frequency=20.0,
+                  sampling=1000.0, start_husec=18 * 36000000, start_sec=1629936000):
+    """Escreve um .rbd no formato de 26 bytes, com a mesma senoide do write_rbd."""
+    with path.open("wb") as handle:
+        for index in range(samples):
+            volts = amplitude_mv * math.sin(2.0 * math.pi * frequency * index / sampling)
+            handle.write(struct.pack(
+                RBD_110_FORMAT,
+                1000 + index,                       # sample
+                start_sec + index // 1000,          # sec
+                index % 1000,                       # ms
+                start_husec + index * 10,           # husec
+                encode_ad7770(int(round(volts / GOLAY_SLOPE))),   # adcu
+                encode_ad7770(2000),                # chopper
+            ))
+    return samples
