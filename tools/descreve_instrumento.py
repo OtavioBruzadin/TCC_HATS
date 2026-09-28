@@ -28,11 +28,12 @@ for entrada in (str(REPO_ROOT), str(PLUGIN_DIR)):
     if entrada not in sys.path:
         sys.path.insert(0, entrada)
 
+import hats_binary_reader as binary_reader                                   # noqa: E402
 import hats_ingestion                                                        # noqa: E402
 from external_contracts.instrument_ingestion_runtime_spec import (            # noqa: E402
     InstrumentIngestionRuntimeSpec)
 
-from hats import constants, discovery                                        # noqa: E402
+from hats import constants, discovery, weather                               # noqa: E402
 
 # Fatos do instrumento, medidos e não estimados. As cadências do apontamento e da
 # estação vêm dos arquivos reais; o volume, de uma hora completa.
@@ -43,6 +44,40 @@ CADENCIAS = {
 }
 
 HORAS_DE_SOL_POR_DIA = 13
+
+# O que cada arquivo seria como fonte RAW. Os nomes de `mode` e `source_key` são do
+# catálogo, ou seja do suporte; aqui vai só o que descreve o instrumento.
+FONTES = [
+    {"arquivo": ".rbd", "conteudo": "sinal do detector", "resolucao": "1ms",
+     "por": "hora", "cadencia_medida": "1,000 ms — passo de 10 husec em 3.599.864 de "
+                                       "3.599.865 intervalos medidos"},
+    {"arquivo": ".aux", "conteudo": "apontamento do telescopio", "resolucao": "1050ms",
+     "por": "hora", "cadencia_medida": "1,0507 s em media, alternando entre 10480 e "
+                                       "10520 husec — laco de software, nao relogio de hardware"},
+    {"arquivo": ".ws", "conteudo": "estacao meteorologica", "resolucao": "5s",
+     "por": "dia", "cadencia_medida": "5,008 s em media; 142 leituras perdidas no dia medido"},
+]
+
+# Produtos que o instrumento PERMITE, com o estado de cada um. Quais existem de fato
+# é declaração do catálogo.
+PRODUTOS = [
+    {"conteudo": "sinal do detector sem transformacao", "nivel": "raw",
+     "resolucao": "1ms", "fonte": ".rbd", "estado": "obrigatorio pelo §7.2"},
+    {"conteudo": "media aritmetica de 100 amostras", "nivel": "derived",
+     "resolucao": "100ms", "fonte": ".rbd",
+     "estado": "obrigatorio pelo §7.2; janela e media CONFIRMADAS pelo suporte"},
+    {"conteudo": "media aritmetica de 1000 amostras", "nivel": "derived",
+     "resolucao": "1s", "fonte": ".rbd",
+     "estado": "obrigatorio pelo §7.2; janela e media CONFIRMADAS pelo suporte"},
+    {"conteudo": "AMPLITUDE DA MODULACAO DE 20 Hz — o dado cientifico do HATS",
+     "nivel": "derived", "resolucao": "32ms (31,25 Hz)", "fonte": ".rbd",
+     "estado": "PENDENTE: nao esta entre os seis obrigatorios e depende de o catalogo "
+               "declarar. Sem ele o HATS publica apenas a portadora e medias dela"},
+    {"conteudo": "apontamento como lido", "nivel": "raw", "resolucao": "1050ms",
+     "fonte": ".aux", "estado": "PENDENTE: depende de fonte RAW propria"},
+    {"conteudo": "estacao meteorologica como lida", "nivel": "raw", "resolucao": "5s",
+     "fonte": ".ws", "estado": "PENDENTE: depende de fonte RAW propria"},
+]
 
 
 def spec_minimo():
@@ -97,6 +132,10 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
     # Volume: o total real do arquivo, não o recorte lido.
     por_hora = resultado.instrument_metadata["records_in_file"]
 
+    apontamento = amostra_do_aux(arquivos.get("aux"))
+    estacao = amostra_do_ws(horas.get("daily", {}).get("ws"))
+    descoberta = observa_diretorio(Path(data_dir))
+
     return {
         "instrumento": {
             "nome": "HATS",
@@ -144,6 +183,11 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
             "1000 amostras — o alvo e a resolucao de 100ms e 1s, e nao a contagem de 10 "
             "e 100 do guia, que pressupoe amostragem de 10 ms como a do POEMAS",
         ],
+        "fontes_raw": FONTES,
+        "produtos_possiveis": PRODUTOS,
+        "file_discovery_observado": descoberta,
+        "registro_do_apontamento": apontamento,
+        "registro_da_estacao": estacao,
         "decisoes_em_aberto": [
             "UTC_TIME esta com microssegundos: o husec tem resolucao de 0,1 ms e o "
             "exemplo do guia (secao 6) mostra milissegundo. Confirmar se a persistencia aceita.",
@@ -155,6 +199,82 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
             "ha produto para o dado cientifico do HATS (amplitude demodulada a 31,25 Hz)? "
             "Com que nomes de metodo?",
         ],
+    }
+
+
+def amostra_do_aux(caminho):
+    """
+    Campos do apontamento, com valores reais, lidos pelo reader.
+
+    O `load_data` do `.aux` ainda não existe — depende de o catálogo declarar uma
+    fonte RAW para ele. Então aqui não há nome final de campo nem UTC_TIME: é o que
+    o formato declara, que é justamente o que o suporte precisa para dimensionar.
+    """
+    if not caminho:
+        return None
+    xml_dir = os.environ.get("HATSXMLPATH") or str(REPO_ROOT / "XMLTables")
+    esquema = binary_reader.load_schema("aux", xml_dir)
+    bloco, quantidade = next(binary_reader.iter_calibrated_blocks(caminho, esquema,
+                                                                 record_limit=200))
+    # jd == 0 marca registro defasado: o husec esta certo, o apontamento e de ~1053 s
+    # antes. Mostrar um desses daria a impressao errada do dado.
+    bons = [i for i in range(quantidade) if bloco["jd"][i] != 0.0]
+    posicao = bons[0] if bons else 0
+    return {
+        "observacao": "campos do {} como o formato declara; o load_data do .aux "
+                      "depende de fonte RAW propria".format(caminho.name),
+        "campos": {nome.upper(): serializa(coluna[posicao])
+                   for nome, coluna in bloco.items()},
+        "registros_defasados_nos_200_primeiros":
+            "{} de {} trazem jd == 0, ou seja apontamento de cerca de 1053 s antes do "
+            "proprio carimbo".format(quantidade - len(bons), quantidade),
+        "unidades_erradas_no_xml":
+            "o HATSAuxFormat.xml declara right_ascension em graus e as taxas em graus/s; "
+            "os dados estao em horas e em arcsec/s. Verificado contra efemerides solares",
+    }
+
+
+def amostra_do_ws(caminho):
+    """Campos da estação, com valores reais."""
+    if not caminho:
+        return None
+    linhas, rejeitadas, reparadas = weather.read(caminho)
+    if not linhas:
+        return None
+    return {
+        "observacao": "campos do {} como o leitor entrega".format(caminho.name),
+        "campos": {chave.upper(): serializa(valor) for chave, valor in linhas[0].items()},
+        "linhas_no_dia": len(linhas),
+        "linhas_rejeitadas": rejeitadas,
+        "carimbos_reparados": "{} linha(s) vinham com byte de controle 0x7f colado no "
+                              "carimbo e foram limpas".format(reparadas),
+    }
+
+
+def observa_diretorio(data_dir):
+    """O que existe de fato no diretório, para o bloco file_discovery."""
+    if not data_dir.is_dir():
+        return None
+    extensoes = {}
+    subdiretorios = []
+    for entrada in sorted(data_dir.iterdir()):
+        if entrada.is_dir():
+            subdiretorios.append(entrada.name)
+        else:
+            extensoes[entrada.suffix or "(sem extensao)"] = \
+                extensoes.get(entrada.suffix or "(sem extensao)", 0) + 1
+    aux = data_dir / "aux"
+    if aux.is_dir():
+        for entrada in sorted(aux.iterdir()):
+            if entrada.is_file():
+                chave = "aux/" + (entrada.suffix or "(sem extensao)")
+                extensoes[chave] = extensoes.get(chave, 0) + 1
+    return {
+        "arquivos_por_extensao": extensoes,
+        "subdiretorios": subdiretorios,
+        "a_excluir": [ext for ext in extensoes if ext in (".txt", ".log")],
+        "a_ignorar_na_varredura": [nome for nome in subdiretorios if nome != "aux"],
+        "observacao": "o aux/ NAO deve ser ignorado: e onde ficam os .aux e os .ws",
     }
 
 
@@ -189,6 +309,58 @@ def imprime(dados):
     for chave, valor in registro["campos"].items():
         print("      {:<{w}}  {:<26}  {}".format(
             chave, str(valor), registro["tipos"][chave], w=largura))
+
+    apontamento = dados.get("registro_do_apontamento")
+    if apontamento:
+        print()
+        print("  ESTRUTURA DO APONTAMENTO")
+        print("    {}".format(apontamento["observacao"]))
+        print()
+        largura = max(len(c) for c in apontamento["campos"])
+        for chave, valor in apontamento["campos"].items():
+            print("      {:<{w}}  {}".format(chave, valor, w=largura))
+        print()
+        print("    defasados : {}".format(apontamento["registros_defasados_nos_200_primeiros"]))
+        print("    ATENCAO   : {}".format(apontamento["unidades_erradas_no_xml"]))
+
+    estacao = dados.get("registro_da_estacao")
+    if estacao:
+        print()
+        print("  ESTRUTURA DA ESTACAO METEOROLOGICA")
+        print("    {}".format(estacao["observacao"]))
+        print()
+        largura = max(len(c) for c in estacao["campos"])
+        for chave, valor in estacao["campos"].items():
+            print("      {:<{w}}  {}".format(chave, valor, w=largura))
+        print()
+        print("    {} linhas no dia, {} rejeitadas".format(
+            estacao["linhas_no_dia"], estacao["linhas_rejeitadas"]))
+        print("    {}".format(estacao["carimbos_reparados"]))
+
+    print()
+    print("  FONTES RAW (para o bloco raw_sources)")
+    for fonte in dados["fontes_raw"]:
+        print("    {:<6} {:<28} resolucao {:<8} um arquivo por {}".format(
+            fonte["arquivo"], fonte["conteudo"], fonte["resolucao"], fonte["por"]))
+        print("    {:<6} cadencia medida: {}".format("", fonte["cadencia_medida"]))
+
+    print()
+    print("  PRODUTOS QUE O INSTRUMENTO PERMITE (para o bloco export)")
+    for produto in dados["produtos_possiveis"]:
+        print("    {:<10} {:<14} {:<6} {}".format(
+            produto["nivel"], produto["resolucao"], produto["fonte"], produto["conteudo"]))
+        print("    {:<10} {}".format("", produto["estado"]))
+
+    descoberta = dados.get("file_discovery_observado")
+    if descoberta:
+        print()
+        print("  O QUE EXISTE NO DIRETORIO (para o bloco file_discovery)")
+        for extensao, quantidade in sorted(descoberta["arquivos_por_extensao"].items()):
+            print("    {:>4} x {}".format(quantidade, extensao))
+        print("    subdiretorios: {}".format(", ".join(descoberta["subdiretorios"])))
+        print("    a excluir    : {}".format(", ".join(descoberta["a_excluir"]) or "(nada)"))
+        print("    a ignorar    : {}".format(", ".join(descoberta["a_ignorar_na_varredura"]) or "(nada)"))
+        print("    {}".format(descoberta["observacao"]))
 
     volume = dados["volume"]
     print()
