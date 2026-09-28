@@ -29,7 +29,7 @@ DATA    ?= $(HATS_DATA_InputPath)
 ZIP     ?= $(HOME)/Downloads/HATS_software.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help test run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
+.PHONY: help test descreve descreve-demo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
 
 help:
 	@echo ""
@@ -46,6 +46,10 @@ help:
 	@echo "    make run-demo            roda o NOSSO sobre Amostra/"
 	@echo "    make diff-demo           compara os dois sobre Amostra/"
 	@echo "    make erro-demo           mede o erro sobre Amostra/"
+	@echo ""
+	@echo "  Plugin do MackSun"
+	@echo "    make descreve            descreve o instrumento a partir do dado real"
+	@echo "    make descreve-demo       idem, sobre Amostra/"
 	@echo ""
 	@echo "    make test                suíte de testes"
 	@echo "    make bench               desempenho dos backends"
@@ -77,6 +81,15 @@ run-dia: check-data
 
 run-demo:
 	@$(MAKE) --no-print-directory run DATA=$(AMOSTRA)
+
+# A informação que cabe ao nosso lado dar a quem mantém o catálogo do MackSun. A
+# estrutura do registro é gerada pelo load_data, não escrita à mão, para não poder
+# divergir do que o plugin produz.
+descreve: check-data
+	$(PYTHON) tools/descreve_instrumento.py --data-dir "$(DATA)" --day $(DAY) --hour $(HOUR)
+
+descreve-demo:
+	@$(MAKE) --no-print-directory descreve DATA=$(AMOSTRA)
 
 # Roda os dois e mede o erro. O diff diz "igual ou diferente"; isto diz quanto.
 erro: check-reference check-data
