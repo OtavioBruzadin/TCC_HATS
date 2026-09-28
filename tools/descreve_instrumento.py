@@ -45,6 +45,32 @@ CADENCIAS = {
 
 HORAS_DE_SOL_POR_DIA = 13
 
+# O layout dos registros não está no código do plugin: vem dos XML de formato do
+# CRAAM. Isto é requisito de implantação, e sem ele o plugin não decodifica nada.
+FORMATO = {
+    "onde_esta_definido":
+        "o layout dos registros NAO esta no codigo do plugin: vem dos XML de formato "
+        "do CRAAM, que precisam estar no ambiente do job",
+    "arquivos_necessarios": [
+        "HATSDataFormat.xml    (ou HATSDataFormat-120.xml) — .rbd de 38 bytes, vigente "
+        "desde 2021-10-25",
+        "HATSDataFormat-110.xml — .rbd de 26 bytes, anterior a 2021-10-25",
+        "HATSAuxFormat.xml      — .aux de 80 bytes",
+        "HATSDataDescription.xsd e HATSAuxDescription.xsd — definem formalmente os XML",
+    ],
+    "como_sao_localizados":
+        "pela variavel HATSXMLPATH, a mesma que o manual do CRAAM manda exportar na "
+        "instalacao. O plugin FALHA se ela nao estiver definida, em vez de adivinhar "
+        "o layout",
+    "duas_versoes_do_rbd":
+        "no formato de 38 bytes o canal do detector se chama 'golay' e ha tres canais "
+        "de temperatura; no de 26 bytes ele se chama 'adcu' e as temperaturas nao "
+        "existem. O plugin reconhece os dois nomes",
+    "tamanho_dos_registros": {".rbd": "38 bytes (26 no formato anterior)",
+                              ".aux": "80 bytes",
+                              ".ws": "ASCII, uma linha por leitura, campos separados por virgula"},
+}
+
 # O que cada arquivo seria como fonte RAW. Os nomes de `mode` e `source_key` são do
 # catálogo, ou seja do suporte; aqui vai só o que descreve o instrumento.
 FONTES = [
@@ -183,6 +209,7 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
             "1000 amostras — o alvo e a resolucao de 100ms e 1s, e nao a contagem de 10 "
             "e 100 do guia, que pressupoe amostragem de 10 ms como a do POEMAS",
         ],
+        "formato_dos_arquivos": FORMATO,
         "fontes_raw": FONTES,
         "produtos_possiveis": PRODUTOS,
         "file_discovery_observado": descoberta,
@@ -195,6 +222,9 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
             "do guia. O passo do canal de temperatura e 3e-5 C, que 4 decimais nao representam.",
             "o POEMAS grava tambem FILEPATH, FULL_FILE_PATH e TELESCOPE em cada registro, "
             "que o exemplo do guia nao mostra. Incluir?",
+            "o registro traz SEC e MS, o carimbo unix do microcontrolador, porque sao "
+            "campos declarados no XML — mas sao REDUNDANTES com o HUSEC e custam dois "
+            "campos em 46,8 milhoes de documentos por dia. Manter?",
             "o .aux e o .ws precisam de raw_sources proprias, como FAST/INTG do SST?",
             "ha produto para o dado cientifico do HATS (amplitude demodulada a 31,25 Hz)? "
             "Com que nomes de metodo?",
@@ -336,6 +366,20 @@ def imprime(dados):
         print("    {} linhas no dia, {} rejeitadas".format(
             estacao["linhas_no_dia"], estacao["linhas_rejeitadas"]))
         print("    {}".format(estacao["carimbos_reparados"]))
+
+    formato = dados["formato_dos_arquivos"]
+    print()
+    print("  FORMATO DOS ARQUIVOS — REQUISITO DE IMPLANTACAO")
+    print("    {}".format(formato["onde_esta_definido"]))
+    print()
+    for necessario in formato["arquivos_necessarios"]:
+        print("      {}".format(necessario))
+    print()
+    print("    localizacao : {}".format(formato["como_sao_localizados"]))
+    print("    duas versoes: {}".format(formato["duas_versoes_do_rbd"]))
+    print()
+    for extensao, tamanho in formato["tamanho_dos_registros"].items():
+        print("    {:<6} {}".format(extensao, tamanho))
 
     print()
     print("  FONTES RAW (para o bloco raw_sources)")
