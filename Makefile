@@ -3,11 +3,12 @@
 # Os alvos que executam o código do CRAAM precisam do ambiente de referência:
 # rode `make setup-reference` uma vez.
 
-# Interpretador. O pacote roda com a biblioteca padrão, mas fica cerca de 16x
-# mais rápido no processamento quando numpy está disponível — por isso, quando o
-# python3 do sistema não tem numpy e existe um ambiente com ele, o segundo é
-# preferido. Passe PYTHON= para escolher à mão.
-PYTHON  ?= $(shell python3 -c "import numpy" >/dev/null 2>&1 && echo python3 \
+# Interpretador. Duas exigências: numpy, porque o processamento fica cerca de 16x
+# mais rápido com ele, e Python 3.10 ou mais novo, porque os contratos do pipeline
+# do MackSun declaram @dataclass(slots=True). O python3 do sistema no macOS é 3.9
+# e não serve, então quando ele não passa o teste o ambiente de referência entra
+# no lugar. Passe PYTHON= para escolher à mão.
+PYTHON  ?= $(shell python3 -c "import sys, numpy; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >/dev/null 2>&1 && echo python3 \
              || { test -x .refvenv/bin/python && echo .refvenv/bin/python; } \
              || echo python3)
 REFVENV ?= .refvenv

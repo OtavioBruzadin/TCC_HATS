@@ -136,7 +136,7 @@ as tabelas são geradas.
 ## Desempenho
 
 Uma hora de dados: 3.600.000 registros, 137 MB de entrada, 242 MB de CSV gerado.
-MacBook arm64, Python 3.9.6.
+MacBook arm64, Python 3.10.21, numpy 1.26.4.
 
 ### Processamento — leitura, calibração e demodulação
 
@@ -144,14 +144,20 @@ MacBook arm64, Python 3.9.6.
 make bench-craam
 ```
 
+Cinco execuções, cada uma já sendo a melhor de três:
+
 | implementação | tempo | memória |
 |---|---|---|
-| `HATS.py` do CRAAM (numpy + binário C) | 1,08 s | 859 MB |
-| pacote, backend stdlib | 4,04 s | 64 MB |
-| **pacote, backend numpy** | **0,07 s** | **83 MB** |
+| `HATS.py` do CRAAM (numpy + binário C) | 1,09 – 1,28 s | 837 – 882 MB |
+| pacote, backend stdlib | 3,71 – 4,18 s | 68 – 75 MB |
+| **pacote, backend numpy** | **0,06 – 0,07 s** | **89 – 97 MB** |
 
-**~16× mais rápido** usando **~10× menos memória**. Sem numpy é ~3,7× mais lento,
-que é o preço de não ter dependência alguma.
+**~16 a 18× mais rápido** usando **~9× menos memória**. Sem numpy é ~3,5× mais
+lento, que é o preço de não ter dependência alguma.
+
+As faixas são intencionais: numa única medida o tempo do CRAAM oscila quase 20%
+entre execuções, e um número com duas casas sugeriria uma precisão que a medição
+não tem.
 
 ### Ponta a ponta — incluindo escrever as tabelas
 
@@ -159,12 +165,12 @@ Melhor de três, com `make run` contra `make run-craam`:
 
 | | tempo |
 |---|---|
-| `HATS.py` do CRAAM | 15,6 – 16,2 s |
-| **este pacote** | **14,4 – 14,6 s** |
+| `HATS.py` do CRAAM | 15,0 – 15,1 s |
+| **este pacote** | **12,6 – 12,9 s** |
 
-Cerca de **9%**. A diferença encolhe porque **a serialização em CSV domina o
+Cerca de **15%**. A diferença encolhe porque **a serialização em CSV domina o
 tempo total**: 242 MB de texto, escritos em Python dos dois lados. O
-processamento, onde está o ganho de 16×, é menos de 1% do trabalho.
+processamento, onde está o ganho de 16 a 18×, é menos de 1% do trabalho.
 
 Vale registrar como resultado: **o gargalo do pipeline do HATS é o formato de
 saída, não o cálculo.** Um formato binário ou colunar mudaria a ordem de grandeza
@@ -337,6 +343,23 @@ hats/
 
 Sem dependências. Se numpy estiver instalado, o backend acelerado é escolhido
 sozinho e o resultado é o mesmo — igualdade bit a bit exigida por teste.
+
+## Ambiente
+
+O pacote `hats/` em si não tem dependência nenhuma e roda em qualquer Python 3.
+Duas partes ao redor dele exigem mais:
+
+- **Python 3.10 ou mais novo**. Não é exigência do pacote, que roda em 3.9: é dos
+  contratos do pipeline do MackSun, que declaram `@dataclass(slots=True)` — e
+  `slots` só existe a partir do 3.10. O `python3` do sistema no macOS é 3.9;
+  `brew install python@3.10` resolve, e o `Makefile` prefere automaticamente um
+  interpretador que sirva. As medidas de desempenho acima foram feitas no 3.10.
+
+- **Versões fixas de numpy, scipy, pandas e astropy** no ambiente de referência,
+  montado por `make setup-reference`. São fixas por necessidade: o `HATS.py` do
+  CRAAM **não roda em numpy 2**, porque o dtype dele é montado com dimensão 1 e o
+  numpy 2 preserva isso como subarray, o que torna a máscara do `np.delete`
+  bidimensional. A justificativa completa está em `tools/setup_reference.sh`.
 
 ## Estrutura de dados
 

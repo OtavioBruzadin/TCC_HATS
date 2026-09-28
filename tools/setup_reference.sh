@@ -33,13 +33,58 @@ if [ ! -d "$UPSTREAM" ]; then
     exit 1
 fi
 
-if [ ! -d "$REFVENV" ]; then
-    echo "--> criando virtualenv"
-    python3 -m venv "$REFVENV"
+# Escolha do interpretador. O pacote hats/ roda em 3.9, mas os contratos do pipeline
+# do MackSun declaram @dataclass(frozen=True, slots=True), e o argumento slots só
+# existe a partir do 3.10 — em 3.9 aqueles arquivos não podem nem ser importados. O
+# python3 do sistema no macOS é 3.9, então a busca começa no 3.10, que é o mínimo, e
+# sobe a partir dele.
+#
+#   PYBIN=/caminho/para/python tools/setup_reference.sh    escolhe à mão
+if [ -z "${PYBIN:-}" ]; then
+    for candidate in python3.10 python3.11 python3.12 python3.13 python3.14 python3; do
+        if command -v "$candidate" >/dev/null 2>&1 &&
+           "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+            PYBIN=$candidate
+            break
+        fi
+    done
 fi
 
-echo "--> instalando numpy, scipy, pandas e astropy"
-"$REFVENV/bin/pip" install --quiet --disable-pip-version-check numpy scipy pandas astropy
+if [ -z "${PYBIN:-}" ]; then
+    echo "ERRO: nenhum Python 3.10 ou mais novo encontrado."
+    echo "      No macOS: brew install python@3.10"
+    echo "      Ou aponte um à mão: PYBIN=/caminho/para/python tools/setup_reference.sh"
+    exit 1
+fi
+
+echo "--> interpretador: $PYBIN ($("$PYBIN" -V 2>&1))"
+
+if [ ! -d "$REFVENV" ]; then
+    echo "--> criando virtualenv"
+    "$PYBIN" -m venv "$REFVENV"
+elif ! "$REFVENV/bin/python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+    echo "--> virtualenv existente é anterior ao 3.10; refazendo"
+    rm -rf "$REFVENV"
+    "$PYBIN" -m venv "$REFVENV"
+fi
+
+# Versões fixas, e não as mais recentes, por dois motivos.
+#
+# O primeiro é obrigatório: o HATS.py do CRAAM NÃO RODA em numpy 2. Na linha 1066
+# ele faz np.delete(whole_data, flag, 0) com uma máscara booleana vinda de
+# whole_data['husec']. O dtype é montado com (nome, tipo, dim) e dim vale 1; o
+# numpy 1.x colapsava esse 1 para um campo escalar, e o numpy 2 o preserva como
+# subarray de shape (1,). O campo passa a ter shape (N, 1), a máscara fica 2-D e
+# o np.delete a recusa:
+#
+#   ValueError: boolean array argument obj to delete must be one dimensional
+#
+# O segundo é de método: a afirmação central deste projeto é igualdade bit a bit
+# com a saída da referência, e ela foi verificada com estas versões. Um ambiente
+# que flutua com o índice do PyPI não sustenta essa afirmação.
+echo "--> instalando numpy, scipy, pandas e astropy (versões fixas)"
+"$REFVENV/bin/pip" install --quiet --disable-pip-version-check \
+    "numpy==1.26.4" "scipy==1.13.1" "pandas==2.3.3" "astropy==6.0.1"
 
 echo "--> compilando o HATS_fft"
 BUILD=$(mktemp -d)
