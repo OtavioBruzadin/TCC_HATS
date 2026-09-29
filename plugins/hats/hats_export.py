@@ -1,8 +1,23 @@
 """
 Exportação: registros RAW -> arquivos FITS e CSV.
 
-Escopo desta etapa: os dois métodos RAW do §7.2, que geram "arquivos sem alterar
-os dados" e "mantêm resolução original". Os quatro derivados vêm em seguida.
+Os seis métodos obrigatórios do §7.2: dois RAW, que geram "arquivos sem alterar os
+dados" e "mantêm resolução original", e quatro derivados, que agregam.
+
+Média, e não mediana
+--------------------
+O §7.2 diz "Calcula mediana" nos dois produtos derivados, e o plugin do POEMAS
+implementa com `np.median`. Perguntado, o suporte do MackSun **confirmou por
+escrito que é média aritmética**. A palavra de quem mantém a especificação vale
+sobre o texto dela, então é média — e fica registrado aqui porque quem ler só o
+PDF vai achar que este código está errado.
+
+O tamanho da janela vem da resolução alvo
+-----------------------------------------
+O §7.2 diz 100 ms = 10 registros e 1 s = 100. Esses números são do POEMAS, que
+amostra a 10 ms. O suporte confirmou que o alvo é a **resolução**: para o HATS, a
+1 kHz, são 100 e 1000 amostras. Por isso as janelas são calculadas a partir da
+frequência de amostragem, e não escritas à mão.
 
 O §11 delimita o que NÃO é nosso: renomear, mover para o NFS, gerar URL e
 registrar são responsabilidade exclusiva do pipeline. O plugin escreve num
@@ -28,8 +43,11 @@ from __future__ import annotations
 
 import csv
 import os
+import statistics
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
+
+from hats import constants
 
 from external_contracts.time_series_specialist_generated_file import (
     TimeSeriesSpecialistGeneratedFile)
@@ -64,6 +82,40 @@ COLUNAS_RAW: Sequence[Coluna] = (
     Coluna("TEMP_GOLAY", "TEMP_GOLAY", "D", "Golay cell temperature (Celsius)"),
 )
 
+# Janelas derivadas da resolução alvo, como o suporte confirmou. A 1 kHz, 0,1 s
+# são 100 amostras e 1 s são 1000.
+JANELA_100MS = int(constants.SAMPLING_FREQUENCY * 0.1)
+JANELA_1S = int(constants.SAMPLING_FREQUENCY * 1.0)
+
+# Campos agregados pela derivação. Os demais vêm do registro central da janela.
+CANAIS_AGREGADOS = ("GOLAY", "CHOPPER", "TEMP_HICS", "TEMP_ENV", "TEMP_GOLAY")
+
+
+@dataclass(frozen=True)
+class Produto:
+    chave: str
+    resolucao: str
+    nivel: str
+    janela: Optional[int]      # None para RAW, que não agrega
+
+
+PRODUTO_RAW = Produto(utils.PRODUTO_RAW, utils.RESOLUCAO_RAW, "raw", None)
+PRODUTO_100MS = Produto(utils.PRODUTO_100MS, utils.RESOLUCAO_100MS, "derived", JANELA_100MS)
+PRODUTO_1S = Produto(utils.PRODUTO_1S, utils.RESOLUCAO_1S, "derived", JANELA_1S)
+
+
+class InsufficientRecords(ValueError):
+    """
+    A entrada é curta demais para o produto pedido.
+
+    Distinta de um defeito: um arquivo com 441 amostras simplesmente não contém uma
+    janela de 1 s, e nenhum produto de 1 s pode sair dele. Quem chama precisa poder
+    separar "este produto não se aplica a esta entrada" de "algo quebrou", e com um
+    ValueError genérico não conseguiria. Continua sendo ValueError para o pipeline,
+    que não conhece a subclasse.
+    """
+
+
 # Aviso que viaja com o arquivo, não só com o código. Sem ele, quem baixar o
 # produto bruto pode tomar a portadora por série de fluxo.
 AVISO_DO_SINAL_PICADO = (
@@ -73,46 +125,106 @@ AVISO_DO_SINAL_PICADO = (
     "quantity, is about 124 mV. Recovering the amplitude requires demodulation.")
 
 
+AVISO_DA_MEDIA = (
+    "CAUTION: this product is the arithmetic mean of the raw detector signal over "
+    "non-overlapping windows. Because the signal is a 20 Hz modulated carrier and "
+    "each window spans a whole number of chopper cycles, the mean estimates the "
+    "mean level of the modulation and NOT the solar flux. The timestamp of each "
+    "record refers to the centre of its aggregation window.")
+
+
 class HatsExport(object):
     """Responsabilidade única: gerar FITS e CSV a partir de registros RAW."""
 
     # ------------------------------------------------- contrato obrigatório
 
     def GenerateFitsFileRawFormat(self, raw_records: List[Dict[str, Any]]):
-        return self._escreve(raw_records, "FITS", "fits")
+        return self._escreve(raw_records, PRODUTO_RAW, "FITS", "fits")
 
     def GenerateCSVFileRawFormat(self, raw_records: List[Dict[str, Any]]):
-        return self._escreve(raw_records, "CSV", "csv")
+        return self._escreve(raw_records, PRODUTO_RAW, "CSV", "csv")
+
+    def GenerateFitsFileDerivedFormat100ms(self, raw_records: List[Dict[str, Any]]):
+        derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_100MS)
+        return self._escreve(derivados, PRODUTO_100MS, "FITS", "fits")
+
+    def GenerateCSVFileDerivedFormat100ms(self, raw_records: List[Dict[str, Any]]):
+        derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_100MS)
+        return self._escreve(derivados, PRODUTO_100MS, "CSV", "csv")
+
+    def GenerateFitsFileDerivedFormat1s(self, raw_records: List[Dict[str, Any]]):
+        derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_1S)
+        return self._escreve(derivados, PRODUTO_1S, "FITS", "fits")
+
+    def GenerateCSVFileDerivedFormat1s(self, raw_records: List[Dict[str, Any]]):
+        derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_1S)
+        return self._escreve(derivados, PRODUTO_1S, "CSV", "csv")
+
+    # ------------------------------------------------------------- derivação
+
+    @staticmethod
+    def _derive_raw_to_fixed_windows(raw_records: List[Dict[str, Any]],
+                                     window_size: int) -> List[Dict[str, Any]]:
+        """
+        Média aritmética em janelas fixas, sem sobreposição.
+
+        Mesmo nome do método central do POEMAS, que o §8 nomeia explicitamente.
+
+        O carimbo do registro derivado é o do **centro** da janela, como no POEMAS,
+        e a última janela incompleta é descartada: publicar uma média de menos
+        amostras com o mesmo rótulo de resolução daria uma estatística diferente
+        sem nada no arquivo indicando.
+        """
+        total = len(raw_records)
+        if total < window_size:
+            raise InsufficientRecords(
+                "a derivacao precisa de ao menos {} registros para fechar uma janela, "
+                "e veio {}".format(window_size, total))
+
+        derivados: List[Dict[str, Any]] = []
+        inicio = 0
+        while inicio + window_size <= total:
+            janela = raw_records[inicio:inicio + window_size]
+            central = dict(janela[window_size // 2])
+            for canal in CANAIS_AGREGADOS:
+                valores = [registro[canal] for registro in janela if canal in registro]
+                if valores:
+                    central[canal] = statistics.fmean(valores)
+            derivados.append(central)
+            inicio += window_size
+
+        return derivados
 
     # ------------------------------------------------------------ escritores
 
-    def _escreve(self, registros: List[Dict[str, Any]], fmt: str, extensao: str):
+    def _escreve(self, registros: List[Dict[str, Any]], produto: Produto,
+                 fmt: str, extensao: str):
         if not registros:
             raise ValueError("records vazio: nao ha o que exportar")
 
         diretorio = utils.get_specialist_tmp_dir()
         primeiro = utils.as_utc(registros[0][utils.TIME_FIELD])
-        nome = utils.build_output_filename(primeiro, utils.PRODUTO_RAW, fmt, extensao)
+        nome = utils.build_output_filename(primeiro, produto.chave, fmt, extensao)
         caminho = os.path.join(diretorio, nome)
 
-        cabecalho = self._cabecalho(nome, registros)
+        cabecalho = self._cabecalho(nome, registros, produto)
         if fmt == "FITS":
-            self._escreve_fits(caminho, registros, cabecalho)
+            self._escreve_fits(caminho, registros, cabecalho, produto)
         else:
-            self._escreve_csv(caminho, registros, cabecalho)
+            self._escreve_csv(caminho, registros, cabecalho, produto)
 
         return TimeSeriesSpecialistGeneratedFile(
             instrument_name=utils.INSTRUMENT_NAME,
             target_date=utils.extract_target_date(registros),
-            level="raw",
-            scientific_product_key=utils.PRODUTO_RAW,
-            product_resolution=utils.RESOLUCAO_RAW,
+            level=produto.nivel,
+            scientific_product_key=produto.chave,
+            product_resolution=produto.resolucao,
             generated_file_format=fmt,
             generated_file_full_path=os.path.abspath(caminho),
         )
 
     @staticmethod
-    def _cabecalho(nome: str, registros: List[Dict[str, Any]]):
+    def _cabecalho(nome: str, registros: List[Dict[str, Any]], produto: Produto):
         """
         As mesmas chaves que o POEMAS usa, para a ferramenta que lê um ler o outro.
 
@@ -137,12 +249,12 @@ class HatsExport(object):
             ("T_END", utils.iso_second(ultimo)),
             ("N_RECORD", len(registros)),
             ("FREQUEN", utils.FREQUENCY),
-            ("FILERES", utils.RESOLUCAO_RAW),
-            ("LEVEL", "raw"),
+            ("FILERES", produto.resolucao),
+            ("LEVEL", produto.nivel),
         ]
 
     @staticmethod
-    def _documentacao():
+    def _documentacao(produto: Produto):
         """Bloco de documentação, montado a partir da tabela de colunas."""
         linhas = [
             "COPYRIGHT. Grant of use.",
@@ -166,10 +278,26 @@ class HatsExport(object):
             "   LEVEL: Data level of this file",
             "",
             "PRODUCT NOTES",
-            "   LEVEL = raw: the time series exactly as registered by the instrument",
-            "   acquisition system, with no transformation applied.",
+            "   SCIENTIFIC PRODUCT: {}".format(produto.chave),
+            "   LEVEL: {}   RESOLUTION: {}".format(produto.nivel, produto.resolucao),
             "",
-            "   " + AVISO_DO_SINAL_PICADO,
+        ]
+        if produto.janela is None:
+            linhas += [
+                "   LEVEL = raw: the time series exactly as registered by the instrument",
+                "   acquisition system, with no transformation applied.",
+                "",
+                "   " + AVISO_DO_SINAL_PICADO,
+            ]
+        else:
+            linhas += [
+                "   Derived by the arithmetic mean of each set of {} consecutive samples "
+                "within".format(produto.janela),
+                "   non-overlapping {} intervals.".format(produto.resolucao),
+                "",
+                "   " + AVISO_DA_MEDIA,
+            ]
+        linhas += [
             "",
             "ITEMS - Contains detailed observation data records",
         ]
@@ -188,12 +316,12 @@ class HatsExport(object):
             return str(int(valor))
         return utils.format_float(valor)
 
-    def _escreve_csv(self, caminho: str, registros, cabecalho) -> None:
+    def _escreve_csv(self, caminho: str, registros, cabecalho, produto: Produto) -> None:
         with open(caminho, "w", encoding="utf-8", newline="") as arquivo:
             escritor = csv.writer(arquivo, delimiter="|", quoting=csv.QUOTE_MINIMAL)
 
             escritor.writerow(["#DOCUMENTATION", ""])
-            for linha in self._documentacao():
+            for linha in self._documentacao(produto):
                 escritor.writerow([linha, ""])
             escritor.writerow([])
 
@@ -207,7 +335,7 @@ class HatsExport(object):
             for registro in registros:
                 escritor.writerow([self._celula(coluna, registro) for coluna in COLUNAS_RAW])
 
-    def _escreve_fits(self, caminho: str, registros, cabecalho) -> None:
+    def _escreve_fits(self, caminho: str, registros, cabecalho, produto: Produto) -> None:
         try:
             from astropy.io import fits
         except ImportError as erro:                     # pragma: no cover
@@ -219,7 +347,7 @@ class HatsExport(object):
         primario.add_blank()
         for chave, valor in cabecalho:
             primario[chave] = valor
-        for linha in self._documentacao():
+        for linha in self._documentacao(produto):
             primario.add_comment(linha)
 
         colunas = [fits.Column(name=coluna.nome, format=coluna.fits,

@@ -37,6 +37,10 @@ FREQUENCY = "15 THz (20 um)"
 # ---------------------------------------------------------------------------
 PRODUTO_RAW = "raw_1ms"
 RESOLUCAO_RAW = "1ms"
+PRODUTO_100MS = "derived_100ms"
+RESOLUCAO_100MS = "100ms"
+PRODUTO_1S = "derived_1s"
+RESOLUCAO_1S = "1s"
 
 # O guia §6 exige este nome exato no registro.
 TIME_FIELD = "UTC_TIME"
