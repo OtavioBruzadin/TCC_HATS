@@ -29,7 +29,7 @@ DATA    ?= $(HATS_DATA_InputPath)
 ZIP     ?= $(HOME)/Downloads/HATS_software.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help test descreve descreve-demo descreve-arquivo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
+.PHONY: help test descreve descreve-demo descreve-arquivo dicionario dicionario-demo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
 
 help:
 	@echo ""
@@ -51,6 +51,7 @@ help:
 	@echo "    make descreve            descreve o instrumento a partir do dado real"
 	@echo "    make descreve-demo       idem, sobre Amostra/"
 	@echo "    make descreve-arquivo    grava a descrição em texto e JSON -> Descricao/"
+	@echo "    make dicionario          dicionário de dados dos arquivos -> Descricao/"
 	@echo ""
 	@echo "    make test                suíte de testes"
 	@echo "    make bench               desempenho dos backends"
@@ -91,6 +92,16 @@ descreve: check-data
 
 descreve-demo:
 	@$(MAKE) --no-print-directory descreve DATA=$(AMOSTRA)
+
+# Dicionário de dados dos arquivos gerados, na estrutura da wiki do MackSun. As
+# tabelas e os exemplos saem dos arquivos que o plugin produz de verdade.
+dicionario: check-data
+	@mkdir -p Descricao
+	@$(PYTHON) tools/dicionario_de_dados.py --data-dir "$(DATA)" --day $(DAY) \
+	    --hour $(HOUR) --output Descricao/HATS-dicionario-de-dados.md
+
+dicionario-demo:
+	@$(MAKE) --no-print-directory dicionario DATA=$(AMOSTRA)
 
 # Grava os dois formatos para anexar. Fora de Saida/, que é comparada com a do CRAAM
 # byte a byte — qualquer arquivo a mais ali quebraria o `make diff`.
