@@ -15,6 +15,18 @@ cadências próprias e dependem de o catálogo declarar fontes RAW separadas, o 
 ainda não foi definido — então são recusados com mensagem explícita em vez de
 entrarem por um caminho improvisado.
 
+Procedência
+-----------
+Cada registro carrega `FULL_FILE_PATH`, por orientação do suporte: identifica
+diretamente o arquivo de origem. Os outros dois campos que o POEMAS grava ficam de
+fora, também por orientação dele — `FILEPATH` atende compatibilidade legada do
+POEMAS, e `TELESCOPE` é redundante porque o pipeline acrescenta a identificação do
+instrumento em `META.INSTRUMENT`.
+
+É a mesma string em todos os registros do arquivo, então custa um ponteiro e não
+uma cópia do caminho.
+
+
 O passo 4 é o "Ponto crítico" do §6
 -----------------------------------
 No POEMAS o problema era outro: o arquivo só traz segundo inteiro, e o plugin
@@ -180,6 +192,9 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
         threshold = self._hour_threshold(cabecalho["HOUR"])
         detector = cabecalho["DETECTOR_CHANNEL"]
 
+        # Uma string, referenciada por todos os registros do arquivo.
+        caminho_de_origem = cabecalho["FULL_FILE_PATH"]
+
         registros: List[Dict[str, Any]] = []
         descartados = 0
         sequencia = 0
@@ -214,9 +229,13 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
                 anterior = husec
 
                 registro = {
+                    # O suporte confirmou: mantido como datetime. A persistencia
+                    # guarda com precisao de milissegundo, e por isso o HUSEC abaixo
+                    # vai como inteiro — e ele que preserva os 0,1 ms do contador.
                     TIME_FIELD: day_base + timedelta(microseconds=int(husec) * 100),
                     "HUSEC": int(husec),
                     "PROC_SEQ": sequencia,
+                    "FULL_FILE_PATH": caminho_de_origem,
                 }
                 for chave, coluna in cientificos:
                     registro[chave] = coluna[posicao]

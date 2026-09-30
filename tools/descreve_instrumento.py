@@ -208,6 +208,14 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
             "produtos derivados: MEDIA aritmetica (confirmado), em janelas de 100 e de "
             "1000 amostras — o alvo e a resolucao de 100ms e 1s, e nao a contagem de 10 "
             "e 100 do guia, que pressupoe amostragem de 10 ms como a do POEMAS",
+            "valores numericos: tipos nativos do Python, nao strings de 4 casas. A "
+            "ressalva foi nao comprometer a resolucao do instrumento; a exportacao usa "
+            "6 casas, e o menor passo de quantizacao e 2,99e-5 C no canal de temperatura",
+            "UTC_TIME: mantido como datetime. A persistencia guarda com precisao de "
+            "milissegundo, e o HUSEC vai como inteiro para preservar os 0,1 ms do contador",
+            "procedencia: so FULL_FILE_PATH nos registros cientificos. FILEPATH atende "
+            "compatibilidade legada do POEMAS e TELESCOPE e redundante, porque o pipeline "
+            "acrescenta a identificacao do instrumento em META.INSTRUMENT",
         ],
         "formato_dos_arquivos": FORMATO,
         "fontes_raw": FONTES,
@@ -216,12 +224,6 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
         "registro_do_apontamento": apontamento,
         "registro_da_estacao": estacao,
         "decisoes_em_aberto": [
-            "UTC_TIME esta com microssegundos: o husec tem resolucao de 0,1 ms e o "
-            "exemplo do guia (secao 6) mostra milissegundo. Confirmar se a persistencia aceita.",
-            "os valores numericos sao numero, nao string de 4 decimais como no exemplo "
-            "do guia. O passo do canal de temperatura e 3e-5 C, que 4 decimais nao representam.",
-            "o POEMAS grava tambem FILEPATH, FULL_FILE_PATH e TELESCOPE em cada registro, "
-            "que o exemplo do guia nao mostra. Incluir?",
             "o registro traz SEC e MS, o carimbo unix do microcontrolador, porque sao "
             "campos declarados no XML — mas sao REDUNDANTES com o HUSEC e custam dois "
             "campos em 46,8 milhoes de documentos por dia. Manter?",

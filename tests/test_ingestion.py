@@ -139,8 +139,27 @@ class TestEstruturaDoRegistro(IngestionTestCase):
         """O husec vira UTC_TIME e HUSEC, mas não um campo chamado 'HUSEC' duplicado."""
         self.assertNotIn("husec", self.registros[0])
         self.assertEqual(sorted(self.registros[0]),
-                         sorted(["UTC_TIME", "HUSEC", "PROC_SEQ", "SAMPLE", "SEC", "MS",
+                         sorted(["UTC_TIME", "HUSEC", "PROC_SEQ", "FULL_FILE_PATH",
+                                 "SAMPLE", "SEC", "MS",
                                  "GOLAY", "CHOPPER", "TEMP_HICS", "TEMP_ENV", "TEMP_GOLAY"]))
+
+    def test_a_procedencia_e_so_o_FULL_FILE_PATH(self):
+        """
+        Orientação do suporte: manter FULL_FILE_PATH, que identifica o arquivo de
+        origem. FILEPATH atende compatibilidade legada do POEMAS e TELESCOPE é
+        redundante — o pipeline já põe a identificação do instrumento em
+        META.INSTRUMENT.
+        """
+        primeiro = self.registros[0]
+        self.assertEqual(primeiro["FULL_FILE_PATH"], str(self.dia["rbd"]))
+        self.assertNotIn("FILEPATH", primeiro)
+        self.assertNotIn("TELESCOPE", primeiro)
+
+    def test_o_caminho_e_o_mesmo_objeto_em_todos_os_registros(self):
+        """Um caminho absoluto copiado 3,6 milhões de vezes seria caro sem motivo."""
+        primeiro = self.registros[0]["FULL_FILE_PATH"]
+        for registro in self.registros[1:50]:
+            self.assertIs(registro["FULL_FILE_PATH"], primeiro)
 
 
 class TestConsistenciaTemporal(IngestionTestCase):

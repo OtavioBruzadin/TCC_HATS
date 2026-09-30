@@ -168,8 +168,56 @@ class TestCSV(ExportTestCase):
 
     def test_a_escrituracao_da_aquisicao_nao_e_publicada(self):
         itens = [linha for linha in self.blocos["#ITEMS"] if linha]
-        for campo in ("PROC_SEQ", "SAMPLE", "SEC", "MS"):
+        for campo in ("PROC_SEQ", "SAMPLE", "SEC", "MS", "FULL_FILE_PATH"):
             self.assertNotIn(campo, itens[0])
+
+
+class TestResolucaoNaEscrita(unittest.TestCase):
+    """
+    O suporte autorizou valores numéricos, com uma ressalva: cuidado com
+    arredondamento que comprometa a resolução do instrumento, tanto na ingestão
+    quanto na exportação.
+
+    Na ingestão não há arredondamento — os valores são float. Na exportação há, e é
+    aqui que a ressalva morde: se as casas decimais fossem poucas, duas contagens
+    vizinhas do ADC sairiam com o mesmo texto e o passo de quantização viraria
+    degrau de arredondamento.
+    """
+
+    # Passos de quantização, das retas de calibração do HATSDataFormat.xml.
+    PASSOS = {"temperatura": 2.99e-5, "golay": 1.154e-3, "chopper": 2.33e-3}
+
+    def test_contagens_vizinhas_do_ADC_nao_colidem(self):
+        for canal, passo in self.PASSOS.items():
+            with self.subTest(canal=canal):
+                base = 30.0
+                self.assertNotEqual(utils.format_float(base),
+                                    utils.format_float(base + passo),
+                                    "{}: o passo de {:.2e} nao sobrevive a {} casas".format(
+                                        canal, passo, utils.DECIMAL_PLACES))
+
+    def test_quatro_casas_destruiriam_o_canal_de_temperatura(self):
+        """
+        Por que não seguimos as quatro casas do POEMAS: o passo do canal de
+        temperatura é 2,99e-5 °C, menor que a granularidade de 1e-4.
+        """
+        base = 30.0
+        passo = self.PASSOS["temperatura"]
+        self.assertEqual(utils.format_float(base, places=4),
+                         utils.format_float(base + passo, places=4))
+
+    def test_o_husec_sai_inteiro_e_sem_arredondamento(self):
+        """
+        Orientação do suporte: manter o HUSEC como inteiro, porque a persistência
+        guarda o UTC_TIME com precisão de milissegundo e é o husec que preserva os
+        0,1 ms do contador.
+        """
+        coluna = next(c for c in hats_export.COLUNAS_RAW if c.nome == "HUSEC")
+        self.assertEqual(coluna.tipo, "int")
+        self.assertEqual(coluna.fits, "K")
+        registro = {utils.TIME_FIELD: datetime(2026, 3, 17, tzinfo=timezone.utc),
+                    "HUSEC": 648000003}
+        self.assertEqual(hats_export.HatsExport._celula(coluna, registro), "648000003")
 
 
 @unittest.skipIf(astropy_fits is None, "astropy nao instalado neste ambiente")
