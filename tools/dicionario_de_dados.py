@@ -174,9 +174,11 @@ def documento(rbd, registros, export):
     add("")
     add("The HATS detector is a Golay cell behind a 20 Hz chopper, so the detector "
         "signal is a modulated carrier. Each derived window spans a whole number of "
-        "chopper cycles, so the mean estimates the mean level of the modulation and "
-        "not the solar flux. Measured on real data, the mean over 100 ms is about "
-        "2 mV while the amplitude of the modulation is about 124 mV.")
+        "chopper cycles, so the carrier cancels out and the mean does not carry the "
+        "solar signal. Measured over 299 s of real observation, the derived means "
+        "fluctuate around zero (mean 0.02 mV, standard deviation 1.5 mV, range -2.3 "
+        "to +2.2 mV) while the amplitude of the modulation over the same interval is "
+        "124.2 mV.")
     add("")
 
     cabecalho_exemplo = export._cabecalho("example.fits", registros, PRODUTOS[0])

@@ -66,14 +66,15 @@ class Coluna:
 
 COLUNA_DE_TEMPO = Coluna(
     "ISO_DATETIME", None, "A26",
-    "Date and time in ISO 8601 format with microseconds "
-    "(YYYY-MM-DDTHH:MM:SS.ssssss), UTC",
+    "Date and time in ISO 8601 format, UTC (YYYY-MM-DDTHH:MM:SS.ssssss). Six "
+    "decimal places; records loaded from persistence carry millisecond precision",
     tipo="time")
 
 COLUNAS_RAW: Sequence[Coluna] = (
     COLUNA_DE_TEMPO,
     Coluna("HUSEC", "HUSEC", "K",
-           "Hundredths of a millisecond since 0 UT, as stamped by the instrument",
+           "Hundredths of a millisecond since 0 UT, as stamped by the instrument. "
+           "Preserves the 0.1 ms resolution of the acquisition counter",
            tipo="int"),
     Coluna("GOLAY", "GOLAY", "D", "Golay cell detector signal (mV)"),
     Coluna("CHOPPER", "CHOPPER", "D", "Chopper reference signal (mV)"),
@@ -118,19 +119,26 @@ class InsufficientRecords(ValueError):
 
 # Aviso que viaja com o arquivo, não só com o código. Sem ele, quem baixar o
 # produto bruto pode tomar a portadora por série de fluxo.
+# Os números vêm de 299 s de observação real de 2026-03-17T1800: as médias em
+# janelas de 100 ms têm média 0,015 mV e desvio 1,532 mV, e a amplitude demodulada
+# no mesmo intervalo tem média 124,167 mV.
 AVISO_DO_SINAL_PICADO = (
     "CAUTION: the HATS detector is a Golay cell behind a 20 Hz chopper, so GOLAY "
-    "is a modulated carrier and not a flux series. Over a 100 ms interval its mean "
-    "is about 2 mV while the amplitude of the modulation, which is the physical "
-    "quantity, is about 124 mV. Recovering the amplitude requires demodulation.")
+    "is a modulated carrier and not a flux series. Averaging it over a whole number "
+    "of chopper cycles cancels the carrier: measured on real data, means over 100 ms "
+    "fluctuate around zero with a standard deviation of 1.5 mV, while the amplitude "
+    "of the modulation, which is the physical quantity, is about 124 mV. Recovering "
+    "the amplitude requires demodulation.")
 
 
 AVISO_DA_MEDIA = (
     "CAUTION: this product is the arithmetic mean of the raw detector signal over "
     "non-overlapping windows. Because the signal is a 20 Hz modulated carrier and "
-    "each window spans a whole number of chopper cycles, the mean estimates the "
-    "mean level of the modulation and NOT the solar flux. The timestamp of each "
-    "record refers to the centre of its aggregation window.")
+    "each window spans a whole number of chopper cycles, the carrier cancels out and "
+    "the mean does NOT carry the solar signal: measured on real data it fluctuates "
+    "around zero with a standard deviation of 1.5 mV, while the amplitude of the "
+    "modulation is about 124 mV. The timestamp of each record refers to the centre "
+    "of its aggregation window.")
 
 
 class HatsExport(object):

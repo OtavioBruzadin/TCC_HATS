@@ -181,8 +181,20 @@ class TestArquivosDerivados(DerivedTestCase):
         gerado = self.export.GenerateCSVFileDerivedFormat100ms(self.registros)
         texto = Path(gerado.generated_file_full_path).read_text(encoding="utf-8")
         self.assertIn("arithmetic mean", texto)
-        self.assertIn("NOT the solar flux", texto)
+        self.assertIn("NOT carry the solar signal", texto)
         self.assertIn("centre of its aggregation window", texto)
+
+    def test_a_media_de_um_numero_inteiro_de_ciclos_cancela(self):
+        """
+        O aviso não é retórico. A fixture grava uma senoide de 20 Hz a 1 kHz, então
+        cada janela de 100 amostras cobre exatamente dois ciclos — e a média sai
+        zero. É o mesmo efeito que no dado real deixa as médias oscilando em torno
+        de zero com desvio de 1,5 mV, contra uma amplitude de 124 mV.
+        """
+        derivados = hats_export.HatsExport._derive_raw_to_fixed_windows(
+            self.registros, hats_export.JANELA_100MS)
+        for derivado in derivados[:10]:
+            self.assertAlmostEqual(derivado["GOLAY"], 0.0, places=9)
 
     def test_o_arquivo_diz_quantas_amostras_a_janela_tem(self):
         gerado = self.export.GenerateCSVFileDerivedFormat1s(self.registros)
