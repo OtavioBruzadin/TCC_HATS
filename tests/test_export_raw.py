@@ -268,6 +268,49 @@ class TestFITS(ExportTestCase):
         self.assertIn("COPYRIGHT", comentarios)
 
 
+class TestTextoPublicavel(unittest.TestCase):
+    """
+    Todo texto que vai para dentro de um arquivo tem de ser ASCII imprimível.
+
+    O cabeçalho do FITS não aceita outra coisa: um travessão numa nota derruba a
+    geração do arquivo com `FITS header values must contain standard printable
+    ASCII characters`. Aconteceu de verdade, e o custo foi descobrir só na hora de
+    escrever o FITS — enquanto o CSV saía normalmente.
+    """
+
+    def _textos(self):
+        for nome in dir(hats_export):
+            if nome.startswith(("NOTA_", "AVISO_")):
+                valor = getattr(hats_export, nome)
+                if isinstance(valor, str):
+                    yield nome, valor
+        for nome in dir(hats_export):
+            produto = getattr(hats_export, nome)
+            if not isinstance(produto, hats_export.Produto):
+                continue
+            for posicao, nota in enumerate(produto.notas):
+                texto = nota if isinstance(nota, str) else nota()
+                yield "{}.notas[{}]".format(nome, posicao), texto
+        for nome in dir(hats_export):
+            camada = getattr(hats_export, nome)
+            if not isinstance(camada, hats_export.Camada):
+                continue
+            yield "{}.descricao".format(nome), camada.descricao
+            for coluna in camada.colunas:
+                yield "{}.{}".format(nome, coluna.nome), coluna.descricao
+
+    def test_nada_que_e_publicado_tem_caractere_fora_do_ASCII(self):
+        for origem, texto in self._textos():
+            with self.subTest(origem=origem):
+                fora = sorted({c for c in texto if not c.isascii()})
+                self.assertFalse(fora, "{} tem {}".format(origem, fora))
+
+    def test_nada_que_e_publicado_tem_caractere_de_controle(self):
+        for origem, texto in self._textos():
+            with self.subTest(origem=origem):
+                self.assertTrue(texto.isprintable(), origem)
+
+
 class TestValoresPendentes(unittest.TestCase):
     """
     scientific_product_key e product_resolution sao declaracao do catalogo. Ficam

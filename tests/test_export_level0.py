@@ -248,9 +248,9 @@ class TestApontamento(Level0TestCase):
 
     def test_o_arquivo_avisa_do_apontamento_defasado(self):
         """
-        Entre 3,5% e 10% dos registros trazem solução de ~1053 s antes. Quem for
-        interpolar o apontamento sobre uma grade uniforme precisa saber disso pelo
-        arquivo, não pelo código.
+        Parte dos registros traz solução de ~1053 s antes. Quem for interpolar o
+        apontamento sobre uma grade uniforme precisa saber disso pelo arquivo, não
+        pelo código.
         """
         texto = Path(self.gerado.generated_file_full_path).read_text(encoding="utf-8")
         self.assertIn("CAUTION", texto)
@@ -451,18 +451,41 @@ class TestDadosReais(unittest.TestCase):
             self.assertEqual(linha[indice["AZIMUTH"]],
                              utils.format_float(bruto[posicao_de["azimuth"]]))
 
-    def test_a_fracao_de_apontamento_defasado_esta_na_faixa_medida(self):
-        """O aviso que vai no arquivo diz 3,5% a 10%; o dado real tem de confirmar."""
-        caminho = Path(DADOS_REAIS) / "aux" / "hats-2026-03-17T1800.aux"
-        if not caminho.exists():
-            self.skipTest("nao achei {}".format(caminho))
+    def test_a_fracao_de_apontamento_defasado_esta_na_faixa_publicada(self):
+        """
+        O aviso que vai dentro do arquivo afirma uma faixa medida. Este teste é o
+        que impede a afirmação de envelhecer: ele varre TODAS as horas de `.aux`
+        disponíveis e exige que cada uma caia na faixa publicada — ou que seja a
+        hora em que nenhum registro tem jd, que o aviso também menciona.
+        """
+        auxiliares = sorted((Path(DADOS_REAIS) / "aux").glob("*.aux"))
+        if not auxiliares:
+            self.skipTest("nenhum .aux em {}".format(Path(DADOS_REAIS) / "aux"))
 
         ingestion = hats_ingestion.HatsIngestion(xml_dir=str(XML_DIR))
-        registros = ingestion.load_data(um_spec(), str(caminho)).data_records
-        defasados = sum(1 for r in registros if r["JD"] == 0.0)
-        fracao = 100.0 * defasados / len(registros)
-        self.assertGreater(fracao, 0.0)
-        self.assertLess(fracao, 15.0, "medido {:.1f}%".format(fracao))
+        fracoes = {}
+        sem_nenhum_valido = []
+        for caminho in auxiliares:
+            registros = ingestion.load_data(um_spec(), str(caminho)).data_records
+            defasados = sum(1 for r in registros if r["JD"] == 0.0)
+            fracao = 100.0 * defasados / len(registros)
+            fracoes[caminho.name] = fracao
+            if defasados == len(registros):
+                sem_nenhum_valido.append(caminho.name)
+            else:
+                # o aviso publica a faixa com uma casa decimal, e é a ela que a
+                # medição tem de corresponder
+                self.assertGreaterEqual(round(fracao, 1), 1.8, "{}: {:.3f}%".format(
+                    caminho.name, fracao))
+                self.assertLessEqual(round(fracao, 1), 95.0, "{}: {:.3f}%".format(
+                    caminho.name, fracao))
+
+        self.assertEqual(len(sem_nenhum_valido), 1, sem_nenhum_valido)
+        print("\n    defasados por hora: {:.1f}% a {:.1f}% em {} horas, e {} sem "
+              "nenhum registro valido".format(
+                  min(f for n, f in fracoes.items() if n not in sem_nenhum_valido),
+                  max(f for n, f in fracoes.items() if n not in sem_nenhum_valido),
+                  len(fracoes) - len(sem_nenhum_valido), sem_nenhum_valido[0]))
 
 
 if __name__ == "__main__":

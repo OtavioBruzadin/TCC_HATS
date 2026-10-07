@@ -108,6 +108,12 @@ PRODUTOS = [
      "fonte": ".aux",
      "estado": "IMPLEMENTADO, nome de metodo PENDENTE: as doze colunas que o criador "
                "do instrumento listou"},
+    {"conteudo": "conjunto reduzido sobre grade uniforme, com interpolacao — o dado "
+                 "integrado (level 1) que o criador do instrumento descreveu",
+     "nivel": "derived", "resolucao": "100ms e 1s", "fonte": ".rbd + .aux",
+     "estado": "IMPLEMENTADO, nome de metodo PENDENTE. E o unico produto que precisa "
+               "das DUAS fontes na mesma chamada, e o contrato entrega uma por "
+               "chamada: a tarefa do catalogo tem de ser declarada sobre as duas"},
     {"conteudo": "estacao meteorologica como lida", "nivel": "raw", "resolucao": "5s",
      "fonte": ".ws", "estado": "PENDENTE: depende de fonte RAW propria"},
 ]
@@ -237,6 +243,15 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
             "o .aux e o .ws precisam de raw_sources proprias, como FAST/INTG do SST?",
             "ha produto para o dado cientifico do HATS (amplitude demodulada a 31,25 Hz)? "
             "Com que nomes de metodo?",
+            "o dado integrado (level 1) precisa das duas fontes na mesma chamada, porque "
+            "junta a amplitude e as temperaturas do .rbd com o apontamento do .aux. O "
+            "contrato entrega uma fonte por chamada: como declarar essa tarefa no "
+            "catalogo?",
+            "o level 1 que o criador do instrumento descreveu usa GRADE UNIFORME com "
+            "INTERPOLACAO; a instrucao do suporte para os derivados e MEDIA de 100 e 1000 "
+            "amostras. Sao operacoes diferentes nas mesmas resolucoes, e a media nao fecha "
+            "sobre a serie demodulada: a 31,25 Hz, 100 ms sao 3,125 amostras. Os dois "
+            "conjuntos existem hoje no plugin. Qual deles o MackSun publica?",
         ],
     }
 

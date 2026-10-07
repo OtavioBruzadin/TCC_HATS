@@ -88,6 +88,20 @@ ARQUIVOS = (
      "fonte": "detector",
      "gerado_por": "amplitude of the 20 Hz modulation of the detector signal, "
                    "recovered by demodulation"},
+    {"produto": hats_export.PRODUTO_NIVEL1_100MS,
+     "camadas_fits": (hats_export.CAMADA_NIVEL1,),
+     "camada_csv": hats_export.CAMADA_NIVEL1,
+     "metodo_csv": "GenerateCSVFileLevel1Format100ms",
+     "fonte": "level1",
+     "gerado_por": "the reduced set of variables interpolated onto a uniform 0.1 s "
+                   "time grid"},
+    {"produto": hats_export.PRODUTO_NIVEL1_1S,
+     "camadas_fits": (hats_export.CAMADA_NIVEL1,),
+     "camada_csv": hats_export.CAMADA_NIVEL1,
+     "metodo_csv": "GenerateCSVFileLevel1Format1s",
+     "fonte": "level1",
+     "gerado_por": "the reduced set of variables interpolated onto a uniform 1 s "
+                   "time grid"},
     {"produto": hats_export.PRODUTO_100MS,
      "camadas_fits": (hats_export.CAMADA_CDATA,),
      "camada_csv": hats_export.CAMADA_CDATA,
@@ -104,9 +118,11 @@ ARQUIVOS = (
          hats_export.JANELA_1S)},
 )
 
-# As quatro estruturas, uma vez cada, na ordem em que o Guigue as listou.
+# As quatro estruturas do instrumento, na ordem em que o Guigue as listou, mais o
+# conjunto reduzido do dado integrado, que não existe no HATS.py.
 ESTRUTURAS = (hats_export.CAMADA_RDATA, hats_export.CAMADA_CDATA,
-              hats_export.CAMADA_APONTAMENTO, hats_export.CAMADA_DECONV)
+              hats_export.CAMADA_APONTAMENTO, hats_export.CAMADA_DECONV,
+              hats_export.CAMADA_NIVEL1)
 
 # Os produtos que agregam em janela fixa.
 PRODUTOS_DERIVADOS = (hats_export.PRODUTO_100MS, hats_export.PRODUTO_1S)
@@ -147,6 +163,8 @@ def registros_reais(data_dir, day, hour, limite):
     aux = horas.get(escolhida, {}).get("aux")
     if aux:
         registros["apontamento"] = ingestion.load_data(um_spec(), str(aux)).data_records
+        # o level 1 é o único produto que precisa das duas fontes na mesma chamada
+        registros["level1"] = registros["detector"] + registros["apontamento"]
 
     return rbd, registros
 
@@ -202,8 +220,9 @@ def documento(rbd, registros, export):
         "written by the control loop about once every 1.05 s. Each one is ingested "
         "as its own raw source.")
     add("")
-    add("Four data structures are published, with the names they have in the "
-        "instrument processing code:")
+    add("Five data structures are published. The first four are the structures of "
+        "the instrument processing code, under the names they have there; the fifth "
+        "is the reduced set of the integrated products, which combines both sources:")
     add("")
     linhas += tabela(
         ["Structure", "Source", "Resolution", "Content"],
@@ -214,7 +233,9 @@ def documento(rbd, registros, export):
          (hats_export.CAMADA_APONTAMENTO.nome, "`.aux`", "1.05 s",
           "telescope pointing solution"),
          (hats_export.CAMADA_DECONV.nome, "`.rbd`", "32 ms",
-          "amplitude of the 20 Hz modulation of the detector signal")])
+          "amplitude of the 20 Hz modulation of the detector signal"),
+         (hats_export.CAMADA_NIVEL1.nome, "both", "0.1 s and 1 s",
+          "reduced set of variables on a uniform time grid")])
     add("")
     add("In FITS, structures that come from the same file are carried as separate "
         "table extensions of one file, named after the structure. In CSV, which is "
@@ -272,6 +293,36 @@ def documento(rbd, registros, export):
         "centre of its analysis window.".format(
             constants.WINDOW_SIZE, constants.STEPS,
             hats_export.CAMADA_DECONV.nome))
+    add("")
+
+    add("### Integrated products (level 1)")
+    add("")
+    add("The variables of the reduced set have different native cadences, so they are "
+        "placed on a uniform time grid of 0.1 s or 1 s and interpolated onto it. The "
+        "grid points are exact multiples of the interval counted from 0 UT, so the "
+        "grids of consecutive files join with no overlap and no repeated instant, and "
+        "the grid covers only the span where every source series has samples: nothing "
+        "is extrapolated. Each point carries the value interpolated at that instant, "
+        "not an average over the interval.")
+    add("")
+    add("Interpolation is linear for the continuous variables. OBJECT and OPMODE are "
+        "categorical identifiers written by the control software, so they are "
+        "resampled by nearest neighbour; no value appears in those columns that the "
+        "instrument did not write.")
+    add("")
+    add("Two choices in these products are pending confirmation by the instrument "
+        "team, and each generated file states which one was applied:")
+    add("")
+    add("1. Records of the pointing file whose JD is zero carry a solution computed "
+        "about 1053 s earlier. Measured over 32 hours of real observation, the "
+        "fraction of records of an hour in this state ranges from 1.8% to 95%, and in "
+        "one further hour every record was in this state; they come in bursts rather "
+        "than spread out. These records are currently discarded as interpolation "
+        "nodes. The longest gap this leaves between two usable pointing records is "
+        "about 67 s, across which the elevation changes by at most 0.23 degree while "
+        "the telescope tracks. Keeping them instead shifts the published elevation by "
+        "up to 2 degrees.")
+    add("2. The nearest-neighbour resampling of OBJECT and OPMODE, described above.")
     add("")
 
     add("### Fixed-window means")
@@ -350,7 +401,8 @@ def documento(rbd, registros, export):
     add("### Example")
     add("")
     # Um exemplo por fonte RAW: o level 0 de cada arquivo que o instrumento escreve.
-    com_exemplo = (hats_export.PRODUTO_RAW, hats_export.PRODUTO_APONTAMENTO)
+    com_exemplo = (hats_export.PRODUTO_RAW, hats_export.PRODUTO_APONTAMENTO,
+                   hats_export.PRODUTO_NIVEL1_100MS)
     for arquivo in ARQUIVOS:
         disponiveis = registros.get(arquivo["fonte"])
         if not disponiveis or arquivo["produto"] not in com_exemplo:

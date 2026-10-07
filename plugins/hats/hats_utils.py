@@ -57,6 +57,42 @@ PRODUTO_CONTAGENS = "raw_counts_1ms"
 PRODUTO_APONTAMENTO = "raw_pointing_1050ms"
 RESOLUCAO_APONTAMENTO = "1050ms"
 
+# O level 1 do Guigue: um arquivo único com as colunas que ele enumerou, a 0,1 s e
+# a 1 s. Mesma pendência — a chave é declaração do catálogo. Note que já existem
+# `derived_100ms` e `derived_1s`, que são outra coisa (média do canal cru, como o
+# suporte instruiu) nas mesmas resoluções; os dois conjuntos coexistem até a
+# videoconferência resolver qual dos dois o MackSun publica.
+PRODUTO_NIVEL1_100MS = "level1_100ms"
+PRODUTO_NIVEL1_1S = "level1_1s"
+
+# ---------------------------------------------------------------------------
+# PENDENTE DE DEFINIÇÃO DO GUIGUE
+#
+# Duas decisões do level 1 que a mensagem dele não resolve. Ficam aqui, num lugar
+# só, e o arquivo gerado declara qual caminho foi tomado — para que ninguém
+# descubra a escolha lendo o código.
+#
+# 1. O APONTAMENTO DEFASADO. Parte dos registros do `.aux` trazem `jd == 0` e uma
+#    solução de cerca de 1053 s antes: o carimbo é atual, a coordenada não. Medido
+#    nas 32 horas que temos, a fração vai de 1,8% a 95% por hora, e numa delas
+#    nenhum registro tem jd preenchido. Vêm em rajadas: de dois a sete minutos na
+#    maioria das horas, metade da hora ou mais em duas delas.
+#    O level 1 que ele descreveu NÃO publica o `jd`, então quem baixar o arquivo
+#    não tem como saber quais pontos saíram desses registros.
+#    Medido: manter os defasados desloca a elevação publicada em até 2 graus;
+#    descartá-los deixa lacuna de no máximo 67 s, ao longo da qual a elevação muda
+#    0,23 grau em rastreio — que é o tamanho do erro que a reta pode introduzir.
+#    Escolhido descartar, por ser o erro uma ordem de grandeza menor e o único que
+#    não mente em silêncio. É uma linha para inverter, e os dois caminhos têm teste.
+NIVEL1_DESCARTA_APONTAMENTO_DEFASADO = True
+
+# 2. OS CATEGÓRICOS. `object` e `opmode` são identificadores do software de
+#    controle: 11 não é "mais" que 7, e a média de 7 com 8 não existe. Interpolar
+#    linearmente produziria valor que nunca foi escrito, então vai vizinho mais
+#    próximo. Não há segundo caminho implementado de propósito: inventar um modo
+#    que ele não pediu seria pior do que marcar a decisão.
+NIVEL1_MODO_DOS_CATEGORICOS = "nearest"
+
 # O guia §6 exige este nome exato no registro.
 TIME_FIELD = "UTC_TIME"
 

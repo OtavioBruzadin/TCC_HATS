@@ -255,8 +255,9 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
                 sequencia += 1
 
         # jd == 0 marca o registro de apontamento defasado: o husec está certo, mas
-        # a solução é de cerca de 1053 s antes. Entre 3,5% e 10% dos registros, nos
-        # dias medidos. Quem for interpolar o apontamento precisa saber disso.
+        # a solução é de cerca de 1053 s antes. De 1,8% a 95% dos registros por hora,
+        # nas 32 horas medidas, em rajadas de minutos inteiros — e numa hora, todos.
+        # Quem for interpolar o apontamento precisa saber disso.
         defasados = sum(1 for r in registros if r.get("JD") == 0.0) if mode == MODE_POINTING else 0
 
         consistencia = {

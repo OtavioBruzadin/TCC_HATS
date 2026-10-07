@@ -71,6 +71,20 @@ class HatsInstrument(TimeSeriesIngestionAdapter, TimeSeriesExportAdapter):
     def GenerateCSVFilePointingFormat(self, raw_records):
         return self._export.GenerateCSVFilePointingFormat(raw_records)
 
+    # ------------------------------------------------ level 1: grade uniforme
+
+    def GenerateFitsFileLevel1Format100ms(self, raw_records):
+        return self._export.GenerateFitsFileLevel1Format100ms(raw_records)
+
+    def GenerateCSVFileLevel1Format100ms(self, raw_records):
+        return self._export.GenerateCSVFileLevel1Format100ms(raw_records)
+
+    def GenerateFitsFileLevel1Format1s(self, raw_records):
+        return self._export.GenerateFitsFileLevel1Format1s(raw_records)
+
+    def GenerateCSVFileLevel1Format1s(self, raw_records):
+        return self._export.GenerateCSVFileLevel1Format1s(raw_records)
+
     # ------------------------------------------- produto científico do HATS
 
     def GenerateFitsFileDeconvFormat32ms(self, raw_records):

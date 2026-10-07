@@ -78,6 +78,7 @@ from hats import constants, demodulation
 from external_contracts.time_series_specialist_generated_file import (
     TimeSeriesSpecialistGeneratedFile)
 
+import hats_level1 as level1
 import hats_utils as utils
 
 
@@ -169,6 +170,48 @@ COLUNAS_DECONV: Sequence[Coluna] = (
 )
 
 
+# Level 1: as doze variáveis que o Guigue enumerou, na ordem em que ele as
+# enumerou. São catorze colunas porque o item 3 da lista dele são as três
+# temperaturas. O `husec` não entra: ele não o pediu, a grade é uniforme e ancorada
+# em 0 UT, então o instante de cada ponto se recupera exatamente do carimbo ISO.
+COLUNAS_NIVEL1: Sequence[Coluna] = (
+    COLUNA_DE_TEMPO,
+    Coluna("AMPLITUDE", "AMPLITUDE", "D",
+           "Amplitude of the 20 Hz modulation of the detector signal (mV), "
+           "interpolated onto the uniform time grid"),
+    Coluna("TEMP_HICS", "TEMP_HICS", "D",
+           "HICS temperature (Celsius), interpolated onto the uniform time grid"),
+    Coluna("TEMP_ENV", "TEMP_ENV", "D",
+           "Enclosure temperature (Celsius), interpolated onto the uniform time grid"),
+    Coluna("TEMP_GOLAY", "TEMP_GOLAY", "D",
+           "Golay cell temperature (Celsius), interpolated onto the uniform time grid"),
+    Coluna("SID", "SID", "D",
+           "Local sidereal time (hours), interpolated onto the uniform time grid"),
+    Coluna("ELEVATION", "ELEVATION", "D",
+           "Telescope elevation (degrees), interpolated onto the uniform time grid"),
+    Coluna("AZIMUTH", "AZIMUTH", "D",
+           "Telescope azimuth (degrees), interpolated onto the uniform time grid"),
+    Coluna("RIGHT_ASCENSION", "RIGHT_ASCENSION", "D",
+           "Right ascension of the observed object (hours), interpolated onto the "
+           "uniform time grid"),
+    Coluna("DECLINATION", "DECLINATION", "D",
+           "Declination of the observed object (degrees), interpolated onto the "
+           "uniform time grid"),
+    Coluna("RA_RATE", "RA_RATE", "D",
+           "Rate of change of right ascension (arcsec/s), interpolated onto the "
+           "uniform time grid"),
+    Coluna("DEC_RATE", "DEC_RATE", "D",
+           "Rate of change of declination (arcsec/s), interpolated onto the uniform "
+           "time grid"),
+    Coluna("OBJECT", "OBJECT", "J",
+           "Identifier of the observed object, as coded by the control software, "
+           "resampled by nearest neighbour", tipo="int"),
+    Coluna("OPMODE", "OPMODE", "J",
+           "Identifier of the telescope operation mode, as coded by the control "
+           "software, resampled by nearest neighbour", tipo="int"),
+)
+
+
 @dataclass(frozen=True)
 class Camada:
     """
@@ -201,6 +244,13 @@ CAMADA_DECONV = Camada(
     "Deconv", COLUNAS_DECONV,
     "Amplitude of the 20 Hz modulation of the detector signal (HATS.py rbd.Deconv)")
 
+# Esta não tem nome no HATS.py: é o conjunto reduzido que o Guigue descreveu para o
+# dado integrado, e ele pediu "um arquivo único com essas colunas".
+CAMADA_NIVEL1 = Camada(
+    "Level1", COLUNAS_NIVEL1,
+    "Reduced set of variables on a uniform time grid, interpolated from the "
+    "detector, the demodulated amplitude and the pointing")
+
 
 # Janelas derivadas da resolução alvo, como o suporte confirmou. A 1 kHz, 0,1 s
 # são 100 amostras e 1 s são 1000.
@@ -209,6 +259,16 @@ JANELA_1S = int(constants.SAMPLING_FREQUENCY * 1.0)
 
 # Campos agregados pela derivação. Os demais vêm do registro central da janela.
 CANAIS_AGREGADOS = ("GOLAY", "CHOPPER", "TEMP_HICS", "TEMP_ENV", "TEMP_GOLAY")
+
+# Passo da grade do level 1, em husec. Inteiro exato: 0,1 s são 1000 husec.
+PASSO_NIVEL1_100MS = int(constants.HUSEC_PER_SECOND * 0.1)
+PASSO_NIVEL1_1S = constants.HUSEC_PER_SECOND
+
+# De onde vem cada coluna do level 1, e como ela atravessa a grade.
+CAMPOS_DE_TEMPERATURA = ("TEMP_HICS", "TEMP_ENV", "TEMP_GOLAY")
+CAMPOS_CONTINUOS_DO_APONTAMENTO = ("SID", "ELEVATION", "AZIMUTH", "RIGHT_ASCENSION",
+                                   "DECLINATION", "RA_RATE", "DEC_RATE")
+CAMPOS_CATEGORICOS = ("OBJECT", "OPMODE")
 
 
 # ------------------------------------------------------------------ avisos
@@ -236,17 +296,23 @@ AVISO_DA_MEDIA = (
     "modulation is about 124 mV. The timestamp of each record refers to the centre "
     "of its aggregation window.")
 
-# Medido em quatro horas de 2026-03-17: entre 3,5% e 10% dos registros do
-# apontamento, com defasagem de cerca de 1053 s.
+# Medido sobre as 32 horas de .aux que temos (2026-03-17 a 19): a fração de
+# registros defasados vai de 1,8% a 95% por hora, e numa delas — a das 11:00 de
+# 2026-03-18 — nenhum registro tem jd preenchido. Eles não se espalham: vêm em
+# rajadas em que quase todo registro do minuto é defasado, de dois a sete minutos
+# na maioria das horas e cobrindo metade ou mais da hora em duas delas.
 AVISO_DO_APONTAMENTO_DEFASADO = (
     "CAUTION: in records whose JD is zero the pointing solution was not recomputed "
     "in that cycle and carries coordinates from about 1053 s earlier; the timestamp "
-    "is current but the position is not. Between 3.5% and 10% of the records of an "
-    "hour are in this state, measured over four hours of real observation. "
-    "Interpolating the pointing onto a uniform time grid without filtering these "
-    "records propagates the stale coordinates into every interpolated value around "
-    "them. OBJECT and OPMODE are categorical identifiers and admit nearest-neighbour "
-    "resampling only.")
+    "is current but the position is not. Measured over 32 hours of real observation, "
+    "the fraction of records of an hour in this state ranges from 1.8% to 95%, and in "
+    "one further hour every record was in this state. They do not occur uniformly: "
+    "they come in bursts in which nearly every record of the minute is stale, lasting "
+    "from two to seven minutes in most hours and covering half or more of the hour in "
+    "two of those measured. Interpolating the pointing onto a uniform time grid without "
+    "filtering these records propagates the stale coordinates into every interpolated "
+    "value around them. OBJECT and OPMODE are categorical identifiers and admit "
+    "nearest-neighbour resampling only.")
 
 NOTA_DO_CDATA = (
     "LEVEL = raw: the detector time series as registered by the instrument "
@@ -285,6 +351,61 @@ NOTA_DO_DECONV = (
     "instrument measures.")
 
 
+def _nota_do_nivel1(resolucao: str) -> str:
+    return ("LEVEL = derived: the reduced set of variables on a uniform time grid of "
+            "{}. The grid points are exact multiples of that interval counted from "
+            "0 UT, so the grids of consecutive files join with no overlap and no "
+            "repeated instant. Every column is interpolated onto the grid from its "
+            "source series, because the sources have different native cadences: the "
+            "demodulated amplitude is produced every 32 ms, the temperatures every "
+            "1 ms and the pointing about every 1.05 s. Each grid point therefore "
+            "carries the value interpolated AT that instant, not an average over the "
+            "interval. The grid covers only the span where every source series has "
+            "samples; nothing is extrapolated.".format(resolucao))
+
+
+NOTA_DA_INTERPOLACAO = (
+    "INTERPOLATION: linear for the continuous variables, which are AMPLITUDE, the "
+    "three temperatures, SID, ELEVATION, AZIMUTH, RIGHT_ASCENSION, DECLINATION, "
+    "RA_RATE and DEC_RATE. OBJECT and OPMODE are categorical identifiers written by "
+    "the control software, so they are resampled by nearest neighbour, ties resolved "
+    "towards the earlier sample: no value appears in those columns that the "
+    "instrument did not write.")
+
+
+def _nota_do_apontamento_no_nivel1() -> str:
+    """
+    O arquivo declara qual das duas decisões pendentes foi tomada.
+
+    Gerada da constante, e não escrita à mão, para o arquivo não poder dizer uma
+    coisa enquanto o código faz outra.
+    """
+    comum = ("STALE POINTING: records of the pointing file whose JD is zero carry a "
+             "solution computed about 1053 s earlier (the timestamp is current, the "
+             "coordinates are not). Measured over 32 hours of real observation, the "
+             "fraction of records of an hour in this state ranges from 1.8% to 95%, "
+             "and they come in bursts rather than spread out: two to seven minutes in "
+             "most hours, half the hour or more in two of those measured. "
+             "This product does not publish JD, so the grid points affected by them "
+             "cannot be identified from the file. ")
+    if utils.NIVEL1_DESCARTA_APONTAMENTO_DEFASADO:
+        return comum + (
+            "They are DISCARDED as interpolation nodes here. Enough records survive "
+            "inside each burst to keep the remaining gaps short: over the same 32 "
+            "hours the longest gap left between two usable pointing records is about "
+            "67 s, and while the telescope tracks, the elevation changes by at most "
+            "0.23 degree across such a gap, which is the size of the error the linear "
+            "interpolation can introduce there. Keeping the stale records instead "
+            "shifts the published elevation by up to 2 degrees, measured on one hour "
+            "of real data. This choice is pending confirmation by the instrument team.")
+    return comum + (
+        "They are KEPT as interpolation nodes here, so the pointing columns around "
+        "them carry coordinates from about 17 minutes earlier: measured on one hour of "
+        "real data, the published elevation differs by up to 2 degrees from what the "
+        "same grid gives when they are discarded. This choice is pending confirmation "
+        "by the instrument team.")
+
+
 def _nota_da_media(janela: int, resolucao: str) -> str:
     return ("LEVEL = derived: the arithmetic mean of each set of {} consecutive "
             "samples, within non-overlapping intervals of {}.".format(janela, resolucao))
@@ -296,7 +417,12 @@ class Produto:
     resolucao: str
     nivel: str
     janela: Optional[int]      # None para RAW e para o demodulado, que não agregam
-    notas: Sequence[str] = ()  # o que vai no bloco de documentação do arquivo
+
+    # O que vai no bloco de documentação do arquivo. Cada item é um texto, ou uma
+    # função sem argumento que devolve o texto. A segunda forma existe porque há
+    # nota que depende de decisão pendente: resolvê-la no import deixaria o arquivo
+    # declarando uma coisa enquanto o código faz outra, se a decisão mudar.
+    notas: Sequence[Any] = ()
 
 
 PRODUTO_RAW = Produto(utils.PRODUTO_RAW, utils.RESOLUCAO_RAW, "raw", None,
@@ -309,6 +435,14 @@ PRODUTO_APONTAMENTO = Produto(utils.PRODUTO_APONTAMENTO, utils.RESOLUCAO_APONTAM
                                NOTA_DAS_UNIDADES_DO_APONTAMENTO))
 PRODUTO_DECONV = Produto(utils.PRODUTO_DECONV, utils.RESOLUCAO_DECONV, "derived", None,
                          (NOTA_DO_DECONV,))
+PRODUTO_NIVEL1_100MS = Produto(
+    utils.PRODUTO_NIVEL1_100MS, utils.RESOLUCAO_100MS, "derived", None,
+    (_nota_do_nivel1(utils.RESOLUCAO_100MS), NOTA_DA_INTERPOLACAO,
+     _nota_do_apontamento_no_nivel1, NOTA_DAS_UNIDADES_DO_APONTAMENTO))
+PRODUTO_NIVEL1_1S = Produto(
+    utils.PRODUTO_NIVEL1_1S, utils.RESOLUCAO_1S, "derived", None,
+    (_nota_do_nivel1(utils.RESOLUCAO_1S), NOTA_DA_INTERPOLACAO,
+     _nota_do_apontamento_no_nivel1, NOTA_DAS_UNIDADES_DO_APONTAMENTO))
 PRODUTO_100MS = Produto(utils.PRODUTO_100MS, utils.RESOLUCAO_100MS, "derived", JANELA_100MS,
                         (_nota_da_media(JANELA_100MS, utils.RESOLUCAO_100MS),
                          AVISO_DA_MEDIA))
@@ -389,6 +523,140 @@ class HatsExport(object):
     def GenerateCSVFilePointingFormat(self, raw_records: List[Dict[str, Any]]):
         return self._escreve(raw_records, PRODUTO_APONTAMENTO, "CSV", "csv",
                              (CAMADA_APONTAMENTO,))
+
+    # ------------------------------------------------ level 1: grade uniforme
+
+    def GenerateFitsFileLevel1Format100ms(self, raw_records: List[Dict[str, Any]]):
+        return self._escreve(self._integra(raw_records, PASSO_NIVEL1_100MS),
+                             PRODUTO_NIVEL1_100MS, "FITS", "fits", (CAMADA_NIVEL1,))
+
+    def GenerateCSVFileLevel1Format100ms(self, raw_records: List[Dict[str, Any]]):
+        return self._escreve(self._integra(raw_records, PASSO_NIVEL1_100MS),
+                             PRODUTO_NIVEL1_100MS, "CSV", "csv", (CAMADA_NIVEL1,))
+
+    def GenerateFitsFileLevel1Format1s(self, raw_records: List[Dict[str, Any]]):
+        return self._escreve(self._integra(raw_records, PASSO_NIVEL1_1S),
+                             PRODUTO_NIVEL1_1S, "FITS", "fits", (CAMADA_NIVEL1,))
+
+    def GenerateCSVFileLevel1Format1s(self, raw_records: List[Dict[str, Any]]):
+        return self._escreve(self._integra(raw_records, PASSO_NIVEL1_1S),
+                             PRODUTO_NIVEL1_1S, "CSV", "csv", (CAMADA_NIVEL1,))
+
+    @staticmethod
+    def _separa_por_estrutura(raw_records: List[Dict[str, Any]]):
+        """
+        Separa os registros do detector dos registros do apontamento.
+
+        O level 1 é a única coisa que o Guigue pediu que precisa das DUAS fontes na
+        mesma conta: a amplitude e as temperaturas vêm do `.rbd`, as nove variáveis
+        de apontamento vêm do `.aux`. O contrato entrega uma fonte por chamada, então
+        este método só funciona se a tarefa do catálogo for declarada sobre as duas
+        fontes juntas. Não há como o plugin contornar isso por conta própria: ele não
+        acessa banco e não conhece as regras do pipeline (§11).
+        """
+        detector = [registro for registro in raw_records if "GOLAY" in registro]
+        apontamento = [registro for registro in raw_records if "JD" in registro]
+
+        if not detector or not apontamento:
+            faltando = "do detector (.rbd)" if not detector else "do apontamento (.aux)"
+            raise WrongStructure(
+                "o level 1 precisa das duas fontes na mesma chamada e nao veio registro "
+                "{}. Dos {} registros recebidos, {} sao do detector e {} do apontamento. "
+                "A tarefa do catalogo tem de ser declarada sobre as duas fontes".format(
+                    faltando, len(raw_records), len(detector), len(apontamento)))
+
+        return detector, apontamento
+
+    def _integra(self, raw_records: List[Dict[str, Any]], passo: int) -> List[Dict[str, Any]]:
+        """
+        As colunas do level 1 sobre a grade uniforme, como ele descreveu.
+
+        Cinco passos: separar as fontes, demodular o detector, escolher os nós do
+        apontamento, montar a grade na interseção das séries e interpolar cada coluna
+        sobre ela.
+        """
+        detector, apontamento = self._separa_por_estrutura(raw_records)
+
+        for campo in CAMPOS_DE_TEMPERATURA:
+            if campo not in detector[0]:
+                raise WrongStructure(
+                    "o level 1 publica as tres temperaturas e o registro do detector nao "
+                    "tem {}. O formato de 26 bytes do .rbd nao tem canal de temperatura, "
+                    "e dele nao sai este produto".format(campo))
+        for campo in CAMPOS_CONTINUOS_DO_APONTAMENTO + CAMPOS_CATEGORICOS:
+            if campo not in apontamento[0]:
+                raise WrongStructure(
+                    "o level 1 publica {} e o registro do apontamento nao tem esse "
+                    "campo".format(campo))
+
+        demodulado = self._demodulate(detector)
+
+        if utils.NIVEL1_DESCARTA_APONTAMENTO_DEFASADO:
+            total = len(apontamento)
+            apontamento = [registro for registro in apontamento
+                           if float(registro.get("JD") or 0.0) != 0.0]
+            if len(apontamento) < 2:
+                raise InsufficientRecords(
+                    "sobraram {} de {} registros de apontamento depois de descartar os "
+                    "de jd zerado, e a interpolacao precisa de ao menos dois".format(
+                        len(apontamento), total))
+
+        nos = {
+            "amplitude": [int(registro["HUSEC"]) for registro in demodulado],
+            "detector": [int(registro["HUSEC"]) for registro in detector],
+            "apontamento": [int(registro["HUSEC"]) for registro in apontamento],
+        }
+        for nome, husecs in nos.items():
+            level1.verifica_nos(nome, husecs)
+
+        primeiro = max(husecs[0] for husecs in nos.values())
+        ultimo = min(husecs[-1] for husecs in nos.values())
+        if ultimo < primeiro:
+            raise InsufficientRecords(
+                "as series nao se sobrepoem: o ultimo instante comum ({}) vem antes do "
+                "primeiro ({}). Sem intervalo comum nao ha grade a preencher sem "
+                "extrapolar".format(ultimo, primeiro))
+
+        pontos = level1.grade(primeiro, ultimo, passo)
+        if not pontos:
+            raise InsufficientRecords(
+                "nenhum multiplo de {} husec desde 0 UT cai no intervalo comum das "
+                "series [{}, {}]: a entrada e mais curta que um ponto da grade".format(
+                    passo, primeiro, ultimo))
+
+        colunas: Dict[str, List[Any]] = {
+            "AMPLITUDE": level1.interpola_linear(
+                nos["amplitude"],
+                [float(registro["AMPLITUDE"]) for registro in demodulado], pontos)}
+
+        # Uma coluna de cada vez: os nós do detector são 3,6 milhões por hora de
+        # observação, e materializar as três temperaturas juntas dobraria o pico.
+        for campo in CAMPOS_DE_TEMPERATURA:
+            colunas[campo] = level1.interpola_linear(
+                nos["detector"],
+                [float(registro[campo]) for registro in detector], pontos)
+        for campo in CAMPOS_CONTINUOS_DO_APONTAMENTO:
+            colunas[campo] = level1.interpola_linear(
+                nos["apontamento"],
+                [float(registro[campo]) for registro in apontamento], pontos)
+
+        if utils.NIVEL1_MODO_DOS_CATEGORICOS != "nearest":
+            raise ValueError(
+                "NIVEL1_MODO_DOS_CATEGORICOS vale {!r} e a unica forma implementada e "
+                "'nearest'. Interpolar um identificador linearmente produziria valor "
+                "que o software de controle nunca escreveu".format(
+                    utils.NIVEL1_MODO_DOS_CATEGORICOS))
+        for campo in CAMPOS_CATEGORICOS:
+            colunas[campo] = level1.interpola_vizinho(
+                nos["apontamento"],
+                [int(registro[campo]) for registro in apontamento], pontos)
+
+        meia_noite = utils.as_utc(detector[0][utils.TIME_FIELD]).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        return [
+            dict({utils.TIME_FIELD: meia_noite + timedelta(microseconds=husec * 100)},
+                 **{campo: valores[posicao] for campo, valores in colunas.items()})
+            for posicao, husec in enumerate(pontos)]
 
     # ------------------------------------------- produto científico do HATS
 
@@ -596,7 +864,8 @@ class HatsExport(object):
             "",
         ]
         for nota in produto.notas:
-            linhas += ["   " + nota, ""]
+            texto = nota if isinstance(nota, str) else nota()
+            linhas += ["   " + texto, ""]
 
         linhas.append("ITEMS - Contains detailed observation data records")
         if len(camadas) > 1:
