@@ -228,8 +228,12 @@ class TestFITS(ExportTestCase):
         self.gerado = self.export.GenerateFitsFileRawFormat(self.registros)
 
     def test_pode_ser_lido_de_volta(self):
+        """
+        A camada procurada pelo nome, e não pelo índice: o FITS do level 0 tem duas
+        tabelas, e quem lê o `cData` tem de pedir o `cData`.
+        """
         with astropy_fits.open(self.gerado.generated_file_full_path) as hdus:
-            cabecalho, tabela = hdus[0].header, hdus[1]
+            cabecalho, tabela = hdus[0].header, hdus["cData"]
 
             self.assertEqual(cabecalho["N_RECORD"], len(self.registros))
             self.assertEqual(cabecalho["TZ"], "UTC")
@@ -249,7 +253,7 @@ class TestFITS(ExportTestCase):
         indice = {nome: posicao for posicao, nome in enumerate(itens[0])}
 
         with astropy_fits.open(self.gerado.generated_file_full_path) as hdus:
-            dados = hdus[1].data
+            dados = hdus["cData"].data
             for posicao in range(200):
                 linha = itens[posicao + 1]
                 self.assertEqual(dados["ISO_DATETIME"][posicao], linha[indice["ISO_DATETIME"]])

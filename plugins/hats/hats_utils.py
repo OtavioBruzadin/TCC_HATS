@@ -44,6 +44,19 @@ RESOLUCAO_1S = "1s"
 PRODUTO_DECONV = "deconv_32ms"
 RESOLUCAO_DECONV = "32ms"
 
+# As duas estruturas que o level 0 do Guigue acrescenta e que precisam de chave
+# própria: o `rData` porque o CSV é plano e cada estrutura é um arquivo, e o `aux`
+# porque é outra fonte RAW, com outra cadência. Mesma pendência das de cima — os
+# nomes são declaração do catálogo.
+#
+# A resolução do apontamento é a mesma string que a ingestão usa como resolução
+# nativa do modo POINTING, mas as duas dizem coisas diferentes: lá é o que o
+# instrumento faz, aqui é o que o catálogo declara. Se um dia divergirem, é porque
+# o catálogo decidiu outra coisa.
+PRODUTO_CONTAGENS = "raw_counts_1ms"
+PRODUTO_APONTAMENTO = "raw_pointing_1050ms"
+RESOLUCAO_APONTAMENTO = "1050ms"
+
 # O guia §6 exige este nome exato no registro.
 TIME_FIELD = "UTC_TIME"
 

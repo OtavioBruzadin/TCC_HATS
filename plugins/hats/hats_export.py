@@ -23,6 +23,31 @@ O §11 delimita o que NÃO é nosso: renomear, mover para o NFS, gerar URL e
 registrar são responsabilidade exclusiva do pipeline. O plugin escreve num
 diretório temporário, devolve o caminho, e acabou.
 
+Quatro estruturas, e o que cabe em cada arquivo
+-----------------------------------------------
+O Guigue pediu o level 0 com as quatro estruturas do `HATS.py`: `rData` (a
+contagem do ADC), `cData` (o valor convertido), `aux` (o apontamento) e `Deconv`
+(a amplitude demodulada) — **em camadas no FITS**, e **um arquivo CSV por
+estrutura**.
+
+O `rData` e o `cData` saem do mesmo `.rbd`, na mesma chamada, e por isso cabem no
+mesmo FITS, em duas HDU. O `aux` chega em outra chamada, porque é outra fonte RAW,
+e o `Deconv` é produto derivado: cada um sai no seu arquivo, com a camada de mesmo
+nome. As quatro num único FITS exigiriam o pipeline entregar as três fontes de uma
+vez, e o contrato é de uma fonte por chamada — isto é limite do encanamento, não
+escolha nossa, e está anotado para a conversa com ele.
+
+No CSV, que é plano, cada estrutura é um arquivo. É por isso que há um método para
+o CSV do `cData` e outro para o do `rData` sobre a mesma entrada.
+
+Nomes de método e chaves de produto
+-----------------------------------
+Os seis nomes obrigatórios vêm do §7.2. Os outros quatro — o demodulado, o
+apontamento e o CSV das contagens — não estão na especificação, porque ela não
+previu instrumento com mais de uma estrutura. Eles seguem o padrão dos
+obrigatórios e **dependem de o catálogo declarar**; as chaves e resoluções
+correspondentes ficam isoladas em `hats_utils.py`, marcadas como pendentes.
+
 Uma tabela de colunas para os dois escritores
 ---------------------------------------------
 FITS e CSV saem da mesma lista de colunas. No plugin do POEMAS a lista
@@ -32,8 +57,8 @@ acordo à mão — é o tipo de duplicação que fica errada em silêncio.
 O que é publicado, e o que não é
 --------------------------------
 O registro que a ingestão produz tem mais campos do que o arquivo publicado. Vão
-para o arquivo o carimbo de tempo nas duas formas (ISO e husec) e os cinco canais
-científicos. Ficam de fora `PROC_SEQ`, que é contador interno da ingestão, e
+para o arquivo o carimbo de tempo nas duas formas (ISO e husec) e os canais de
+cada estrutura. Ficam de fora `PROC_SEQ`, que é contador interno da ingestão, e
 `SAMPLE`, `SEC` e `MS`, que são escrituração da aquisição e redundantes com o
 husec. O POEMAS faz a mesma distinção: o registro dele tem trinta campos e o CSV
 tem dez.
@@ -71,12 +96,16 @@ COLUNA_DE_TEMPO = Coluna(
     "decimal places; records loaded from persistence carry millisecond precision",
     tipo="time")
 
+COLUNA_DE_HUSEC = Coluna(
+    "HUSEC", "HUSEC", "K",
+    "Hundredths of a millisecond since 0 UT, as stamped by the instrument. "
+    "Preserves the 0.1 ms resolution of the acquisition counter",
+    tipo="int")
+
+# cData: os cinco canais com a reta de calibração aplicada.
 COLUNAS_RAW: Sequence[Coluna] = (
     COLUNA_DE_TEMPO,
-    Coluna("HUSEC", "HUSEC", "K",
-           "Hundredths of a millisecond since 0 UT, as stamped by the instrument. "
-           "Preserves the 0.1 ms resolution of the acquisition counter",
-           tipo="int"),
+    COLUNA_DE_HUSEC,
     Coluna("GOLAY", "GOLAY", "D", "Golay cell detector signal (mV)"),
     Coluna("CHOPPER", "CHOPPER", "D", "Chopper reference signal (mV)"),
     Coluna("TEMP_HICS", "TEMP_HICS", "D", "HICS temperature (Celsius)"),
@@ -84,9 +113,52 @@ COLUNAS_RAW: Sequence[Coluna] = (
     Coluna("TEMP_GOLAY", "TEMP_GOLAY", "D", "Golay cell temperature (Celsius)"),
 )
 
-# Janelas derivadas da resolução alvo, como o suporte confirmou. A 1 kHz, 0,1 s
-# são 100 amostras e 1 s são 1000.
-# As três colunas da estrutura Deconv do HATS.py: time, husec e amplitude.
+# rData: as mesmas grandezas em contagem do ADC, antes da reta. Inteiro de 24 bits
+# com sinal, então "J" (32 bits) cobre a faixa com folga.
+COLUNAS_CONTAGENS: Sequence[Coluna] = (
+    COLUNA_DE_TEMPO,
+    COLUNA_DE_HUSEC,
+    Coluna("GOLAY_ADCU", "GOLAY_ADCU", "J",
+           "Golay cell detector channel, raw ADC counts", tipo="int"),
+    Coluna("CHOPPER_ADCU", "CHOPPER_ADCU", "J",
+           "Chopper reference channel, raw ADC counts", tipo="int"),
+    Coluna("TEMP_HICS_ADCU", "TEMP_HICS_ADCU", "J",
+           "HICS temperature channel, raw ADC counts", tipo="int"),
+    Coluna("TEMP_ENV_ADCU", "TEMP_ENV_ADCU", "J",
+           "Enclosure temperature channel, raw ADC counts", tipo="int"),
+    Coluna("TEMP_GOLAY_ADCU", "TEMP_GOLAY_ADCU", "J",
+           "Golay cell temperature channel, raw ADC counts", tipo="int"),
+)
+
+# aux: as onze variáveis do HATSAuxFormat.xml, mais o carimbo em ISO. As unidades
+# são as dos dados, não as declaradas no XML, que traz "degrees" em quatro campos
+# onde o HATS.py usa hora e arcsec/s.
+COLUNAS_APONTAMENTO: Sequence[Coluna] = (
+    COLUNA_DE_TEMPO,
+    COLUNA_DE_HUSEC,
+    Coluna("JD", "JD", "D",
+           "Julian date of the pointing solution. Zero marks a record whose "
+           "solution was not recomputed in this cycle"),
+    Coluna("SID", "SID", "D", "Local sidereal time (hours)"),
+    Coluna("ELEVATION", "ELEVATION", "D", "Telescope elevation (degrees)"),
+    Coluna("AZIMUTH", "AZIMUTH", "D", "Telescope azimuth (degrees)"),
+    Coluna("RIGHT_ASCENSION", "RIGHT_ASCENSION", "D",
+           "Right ascension of the observed object (hours)"),
+    Coluna("DECLINATION", "DECLINATION", "D",
+           "Declination of the observed object (degrees)"),
+    Coluna("RA_RATE", "RA_RATE", "D",
+           "Rate of change of right ascension (arcsec/s)"),
+    Coluna("DEC_RATE", "DEC_RATE", "D",
+           "Rate of change of declination (arcsec/s)"),
+    Coluna("OBJECT", "OBJECT", "J",
+           "Identifier of the observed object, as coded by the control software",
+           tipo="int"),
+    Coluna("OPMODE", "OPMODE", "J",
+           "Identifier of the telescope operation mode, as coded by the control "
+           "software", tipo="int"),
+)
+
+# Deconv: as três colunas da estrutura de mesmo nome do HATS.py.
 COLUNAS_DECONV: Sequence[Coluna] = (
     COLUNA_DE_TEMPO,
     Coluna("HUSEC", "HUSEC", "K",
@@ -96,11 +168,126 @@ COLUNAS_DECONV: Sequence[Coluna] = (
            "Amplitude of the 20 Hz modulation of the detector signal (mV)"),
 )
 
+
+@dataclass(frozen=True)
+class Camada:
+    """
+    Uma estrutura do HATS.py dentro de um arquivo.
+
+    No FITS vira uma HDU com este `nome` em EXTNAME; no CSV, que é plano, vira o
+    arquivo inteiro. O nome é o da estrutura no `HATS.py`, para que quem abrir o
+    arquivo reconheça de onde o dado veio.
+    """
+    nome: str
+    colunas: Sequence[Coluna]
+    descricao: str
+
+
+CAMADA_RDATA = Camada(
+    "rData", COLUNAS_CONTAGENS,
+    "ADC counts as registered by the acquisition system, before the calibration "
+    "lines are applied (HATS.py rbd.rData)")
+
+CAMADA_CDATA = Camada(
+    "cData", COLUNAS_RAW,
+    "Detector channels in physical units, obtained by applying the calibration "
+    "lines of the instrument format tables to the ADC counts (HATS.py rbd.cData)")
+
+CAMADA_APONTAMENTO = Camada(
+    "aux", COLUNAS_APONTAMENTO,
+    "Telescope pointing solution, as registered by the control loop (HATS.py aux)")
+
+CAMADA_DECONV = Camada(
+    "Deconv", COLUNAS_DECONV,
+    "Amplitude of the 20 Hz modulation of the detector signal (HATS.py rbd.Deconv)")
+
+
+# Janelas derivadas da resolução alvo, como o suporte confirmou. A 1 kHz, 0,1 s
+# são 100 amostras e 1 s são 1000.
 JANELA_100MS = int(constants.SAMPLING_FREQUENCY * 0.1)
 JANELA_1S = int(constants.SAMPLING_FREQUENCY * 1.0)
 
 # Campos agregados pela derivação. Os demais vêm do registro central da janela.
 CANAIS_AGREGADOS = ("GOLAY", "CHOPPER", "TEMP_HICS", "TEMP_ENV", "TEMP_GOLAY")
+
+
+# ------------------------------------------------------------------ avisos
+#
+# Avisos que viajam com o arquivo, não só com o código. Sem eles, quem baixar o
+# produto não tem como saber o que tem na mão.
+
+# Os números vêm de 299 s de observação real de 2026-03-17T1800: as médias em
+# janelas de 100 ms têm média 0,015 mV e desvio 1,532 mV, e a amplitude demodulada
+# no mesmo intervalo tem média 124,167 mV.
+AVISO_DO_SINAL_PICADO = (
+    "CAUTION: the HATS detector is a Golay cell behind a 20 Hz chopper, so the "
+    "detector channel is a modulated carrier and not a flux series. Averaging it "
+    "over a whole number of chopper cycles cancels the carrier: measured on real "
+    "data, means over 100 ms fluctuate around zero with a standard deviation of "
+    "1.5 mV, while the amplitude of the modulation, which is the physical quantity, "
+    "is about 124 mV. Recovering the amplitude requires demodulation.")
+
+AVISO_DA_MEDIA = (
+    "CAUTION: this product is the arithmetic mean of the raw detector signal over "
+    "non-overlapping windows. Because the signal is a 20 Hz modulated carrier and "
+    "each window spans a whole number of chopper cycles, the carrier cancels out and "
+    "the mean does NOT carry the solar signal: measured on real data it fluctuates "
+    "around zero with a standard deviation of 1.5 mV, while the amplitude of the "
+    "modulation is about 124 mV. The timestamp of each record refers to the centre "
+    "of its aggregation window.")
+
+# Medido em quatro horas de 2026-03-17: entre 3,5% e 10% dos registros do
+# apontamento, com defasagem de cerca de 1053 s.
+AVISO_DO_APONTAMENTO_DEFASADO = (
+    "CAUTION: in records whose JD is zero the pointing solution was not recomputed "
+    "in that cycle and carries coordinates from about 1053 s earlier; the timestamp "
+    "is current but the position is not. Between 3.5% and 10% of the records of an "
+    "hour are in this state, measured over four hours of real observation. "
+    "Interpolating the pointing onto a uniform time grid without filtering these "
+    "records propagates the stale coordinates into every interpolated value around "
+    "them. OBJECT and OPMODE are categorical identifiers and admit nearest-neighbour "
+    "resampling only.")
+
+NOTA_DO_CDATA = (
+    "LEVEL = raw: the detector time series as registered by the instrument "
+    "acquisition system, with the calibration lines declared in the instrument "
+    "format tables applied to the ADC counts and no other transformation. "
+    "Corresponds to the cData structure of HATS.py.")
+
+NOTA_DO_RDATA = (
+    "LEVEL = raw: the ADC counts as registered, sign-extended from the 24 "
+    "significant bits of the AD7770 word, with no calibration applied. Corresponds "
+    "to the rData structure of HATS.py; the same samples in physical units are "
+    "published as the {} product.".format(utils.PRODUTO_RAW))
+
+NOTA_DO_APONTAMENTO = (
+    "LEVEL = raw: the telescope pointing solution as registered by the control "
+    "loop, at its native cadence. The cadence is a software loop and not a hardware "
+    "clock: measured on real data it averages 1.0507 s, alternating between 1.048 "
+    "and 1.052 s. Corresponds to the aux structure of HATS.py.")
+
+# O XML do apontamento declara grau em três campos onde o dado está em hora e
+# arcsec/s. O pacote `hats` corrige isso no esquema (AUX_UNIT_FIXES) e o arquivo
+# publica o valor como está gravado, com a unidade real na descrição da coluna —
+# mas quem for conferir contra o XML precisa saber da discrepância.
+NOTA_DAS_UNIDADES_DO_APONTAMENTO = (
+    "NOTE ON UNITS: the instrument format table declares degrees for "
+    "RIGHT_ASCENSION, RA_RATE and DEC_RATE, while the values actually stored are "
+    "hours, arcsec/s and arcsec/s. They are published exactly as stored, in the "
+    "units stated in the column descriptions below.")
+
+NOTA_DO_DECONV = (
+    "LEVEL = derived: amplitude of the 20 Hz modulation of the detector signal, "
+    "recovered by the Goertzel algorithm over a flat-top window of 128 samples "
+    "stepping 32 samples at a time, which yields one value every 32 ms. The "
+    "timestamp of each record is the centre of its analysis window. Corresponds to "
+    "the Deconv structure of HATS.py, and this is the physical quantity the "
+    "instrument measures.")
+
+
+def _nota_da_media(janela: int, resolucao: str) -> str:
+    return ("LEVEL = derived: the arithmetic mean of each set of {} consecutive "
+            "samples, within non-overlapping intervals of {}.".format(janela, resolucao))
 
 
 @dataclass(frozen=True)
@@ -109,12 +296,24 @@ class Produto:
     resolucao: str
     nivel: str
     janela: Optional[int]      # None para RAW e para o demodulado, que não agregam
+    notas: Sequence[str] = ()  # o que vai no bloco de documentação do arquivo
 
 
-PRODUTO_RAW = Produto(utils.PRODUTO_RAW, utils.RESOLUCAO_RAW, "raw", None)
-PRODUTO_DECONV = Produto(utils.PRODUTO_DECONV, utils.RESOLUCAO_DECONV, "derived", None)
-PRODUTO_100MS = Produto(utils.PRODUTO_100MS, utils.RESOLUCAO_100MS, "derived", JANELA_100MS)
-PRODUTO_1S = Produto(utils.PRODUTO_1S, utils.RESOLUCAO_1S, "derived", JANELA_1S)
+PRODUTO_RAW = Produto(utils.PRODUTO_RAW, utils.RESOLUCAO_RAW, "raw", None,
+                      (NOTA_DO_CDATA, AVISO_DO_SINAL_PICADO))
+PRODUTO_CONTAGENS = Produto(utils.PRODUTO_CONTAGENS, utils.RESOLUCAO_RAW, "raw", None,
+                            (NOTA_DO_RDATA, AVISO_DO_SINAL_PICADO))
+PRODUTO_APONTAMENTO = Produto(utils.PRODUTO_APONTAMENTO, utils.RESOLUCAO_APONTAMENTO,
+                              "raw", None,
+                              (NOTA_DO_APONTAMENTO, AVISO_DO_APONTAMENTO_DEFASADO,
+                               NOTA_DAS_UNIDADES_DO_APONTAMENTO))
+PRODUTO_DECONV = Produto(utils.PRODUTO_DECONV, utils.RESOLUCAO_DECONV, "derived", None,
+                         (NOTA_DO_DECONV,))
+PRODUTO_100MS = Produto(utils.PRODUTO_100MS, utils.RESOLUCAO_100MS, "derived", JANELA_100MS,
+                        (_nota_da_media(JANELA_100MS, utils.RESOLUCAO_100MS),
+                         AVISO_DA_MEDIA))
+PRODUTO_1S = Produto(utils.PRODUTO_1S, utils.RESOLUCAO_1S, "derived", JANELA_1S,
+                     (_nota_da_media(JANELA_1S, utils.RESOLUCAO_1S), AVISO_DA_MEDIA))
 
 
 class InsufficientRecords(ValueError):
@@ -129,28 +328,14 @@ class InsufficientRecords(ValueError):
     """
 
 
-# Aviso que viaja com o arquivo, não só com o código. Sem ele, quem baixar o
-# produto bruto pode tomar a portadora por série de fluxo.
-# Os números vêm de 299 s de observação real de 2026-03-17T1800: as médias em
-# janelas de 100 ms têm média 0,015 mV e desvio 1,532 mV, e a amplitude demodulada
-# no mesmo intervalo tem média 124,167 mV.
-AVISO_DO_SINAL_PICADO = (
-    "CAUTION: the HATS detector is a Golay cell behind a 20 Hz chopper, so GOLAY "
-    "is a modulated carrier and not a flux series. Averaging it over a whole number "
-    "of chopper cycles cancels the carrier: measured on real data, means over 100 ms "
-    "fluctuate around zero with a standard deviation of 1.5 mV, while the amplitude "
-    "of the modulation, which is the physical quantity, is about 124 mV. Recovering "
-    "the amplitude requires demodulation.")
+class WrongStructure(ValueError):
+    """
+    Os registros recebidos não são da estrutura que este produto publica.
 
-
-AVISO_DA_MEDIA = (
-    "CAUTION: this product is the arithmetic mean of the raw detector signal over "
-    "non-overlapping windows. Because the signal is a 20 Hz modulated carrier and "
-    "each window spans a whole number of chopper cycles, the carrier cancels out and "
-    "the mean does NOT carry the solar signal: measured on real data it fluctuates "
-    "around zero with a standard deviation of 1.5 mV, while the amplitude of the "
-    "modulation is about 124 mV. The timestamp of each record refers to the centre "
-    "of its aggregation window.")
+    Existe porque agora há quatro estruturas e quatro famílias de método. Sem esta
+    checagem, chamar o CSV do apontamento com registros do detector escreveria um
+    arquivo com onze colunas vazias — bem formado, publicável, e sem dado nenhum.
+    """
 
 
 class HatsExport(object):
@@ -159,34 +344,61 @@ class HatsExport(object):
     # ------------------------------------------------- contrato obrigatório
 
     def GenerateFitsFileRawFormat(self, raw_records: List[Dict[str, Any]]):
-        return self._escreve(raw_records, PRODUTO_RAW, "FITS", "fits")
+        """
+        O level 0 do detector: as contagens e os valores convertidos, em camadas.
+
+        Duas HDU no mesmo arquivo, na ordem em que o Guigue listou as estruturas.
+        """
+        return self._escreve(raw_records, PRODUTO_RAW, "FITS", "fits",
+                             (CAMADA_RDATA, CAMADA_CDATA))
 
     def GenerateCSVFileRawFormat(self, raw_records: List[Dict[str, Any]]):
-        return self._escreve(raw_records, PRODUTO_RAW, "CSV", "csv")
+        return self._escreve(raw_records, PRODUTO_RAW, "CSV", "csv", (CAMADA_CDATA,))
 
     def GenerateFitsFileDerivedFormat100ms(self, raw_records: List[Dict[str, Any]]):
         derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_100MS)
-        return self._escreve(derivados, PRODUTO_100MS, "FITS", "fits")
+        return self._escreve(derivados, PRODUTO_100MS, "FITS", "fits", (CAMADA_CDATA,))
 
     def GenerateCSVFileDerivedFormat100ms(self, raw_records: List[Dict[str, Any]]):
         derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_100MS)
-        return self._escreve(derivados, PRODUTO_100MS, "CSV", "csv")
+        return self._escreve(derivados, PRODUTO_100MS, "CSV", "csv", (CAMADA_CDATA,))
 
     def GenerateFitsFileDerivedFormat1s(self, raw_records: List[Dict[str, Any]]):
         derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_1S)
-        return self._escreve(derivados, PRODUTO_1S, "FITS", "fits")
+        return self._escreve(derivados, PRODUTO_1S, "FITS", "fits", (CAMADA_CDATA,))
 
     def GenerateCSVFileDerivedFormat1s(self, raw_records: List[Dict[str, Any]]):
         derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_1S)
-        return self._escreve(derivados, PRODUTO_1S, "CSV", "csv")
+        return self._escreve(derivados, PRODUTO_1S, "CSV", "csv", (CAMADA_CDATA,))
+
+    # ------------------------------- um arquivo CSV por estrutura do level 0
+
+    def GenerateCSVFileRawCountsFormat(self, raw_records: List[Dict[str, Any]]):
+        """
+        O `rData` em arquivo próprio, porque o CSV é plano e não tem camada.
+
+        No FITS esta estrutura é a primeira HDU do produto RAW; aqui é um arquivo.
+        """
+        return self._escreve(raw_records, PRODUTO_CONTAGENS, "CSV", "csv",
+                             (CAMADA_RDATA,))
+
+    def GenerateFitsFilePointingFormat(self, raw_records: List[Dict[str, Any]]):
+        return self._escreve(raw_records, PRODUTO_APONTAMENTO, "FITS", "fits",
+                             (CAMADA_APONTAMENTO,))
+
+    def GenerateCSVFilePointingFormat(self, raw_records: List[Dict[str, Any]]):
+        return self._escreve(raw_records, PRODUTO_APONTAMENTO, "CSV", "csv",
+                             (CAMADA_APONTAMENTO,))
 
     # ------------------------------------------- produto científico do HATS
 
     def GenerateFitsFileDeconvFormat32ms(self, raw_records: List[Dict[str, Any]]):
-        return self._escreve(self._demodulate(raw_records), PRODUTO_DECONV, "FITS", "fits")
+        return self._escreve(self._demodulate(raw_records), PRODUTO_DECONV,
+                             "FITS", "fits", (CAMADA_DECONV,))
 
     def GenerateCSVFileDeconvFormat32ms(self, raw_records: List[Dict[str, Any]]):
-        return self._escreve(self._demodulate(raw_records), PRODUTO_DECONV, "CSV", "csv")
+        return self._escreve(self._demodulate(raw_records), PRODUTO_DECONV,
+                             "CSV", "csv", (CAMADA_DECONV,))
 
     @staticmethod
     def _demodulate(raw_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -272,13 +484,36 @@ class HatsExport(object):
     # ------------------------------------------------------------ escritores
 
     @staticmethod
-    def _colunas(produto: Produto) -> Sequence[Coluna]:
-        return COLUNAS_DECONV if produto.chave == utils.PRODUTO_DECONV else COLUNAS_RAW
+    def _confere_a_estrutura(registros: List[Dict[str, Any]],
+                             camadas: Sequence[Camada]) -> None:
+        """
+        Os registros têm de pertencer à estrutura que o produto publica.
+
+        Basta uma coluna de dado para reconhecer a estrutura; não se exigem todas,
+        porque o formato de 26 bytes do `.rbd` não tem os canais de temperatura e
+        um arquivo daqueles continua sendo detector. O que esta checagem recusa é a
+        troca de estrutura: registros de apontamento no CSV do detector sairiam com
+        todas as colunas vazias, num arquivo bem formado e sem dado nenhum.
+        """
+        presentes = set(registros[0])
+        for camada in camadas:
+            dados = [coluna.chave for coluna in camada.colunas
+                     if coluna.chave and coluna.chave != "HUSEC"]
+            if not presentes.intersection(dados):
+                raise WrongStructure(
+                    "nenhuma coluna de dado da estrutura {} existe nestes registros. "
+                    "Esperado ao menos um de {}; o registro tem {}".format(
+                        camada.nome, ", ".join(dados), ", ".join(sorted(presentes))))
 
     def _escreve(self, registros: List[Dict[str, Any]], produto: Produto,
-                 fmt: str, extensao: str):
+                 fmt: str, extensao: str, camadas: Sequence[Camada]):
         if not registros:
             raise ValueError("records vazio: nao ha o que exportar")
+        if fmt == "CSV" and len(camadas) != 1:
+            raise ValueError(
+                "o CSV e plano e guarda uma estrutura por arquivo; o produto {} pediu "
+                "{}".format(produto.chave, len(camadas)))
+        self._confere_a_estrutura(registros, camadas)
 
         diretorio = utils.get_specialist_tmp_dir()
         primeiro = utils.as_utc(registros[0][utils.TIME_FIELD])
@@ -287,9 +522,9 @@ class HatsExport(object):
 
         cabecalho = self._cabecalho(nome, registros, produto)
         if fmt == "FITS":
-            self._escreve_fits(caminho, registros, cabecalho, produto)
+            self._escreve_fits(caminho, registros, cabecalho, produto, camadas)
         else:
-            self._escreve_csv(caminho, registros, cabecalho, produto)
+            self._escreve_csv(caminho, registros, cabecalho, produto, camadas)
 
         return TimeSeriesSpecialistGeneratedFile(
             instrument_name=utils.INSTRUMENT_NAME,
@@ -332,8 +567,8 @@ class HatsExport(object):
         ]
 
     @staticmethod
-    def _documentacao(produto: Produto):
-        """Bloco de documentação, montado a partir da tabela de colunas."""
+    def _documentacao(produto: Produto, camadas: Sequence[Camada]):
+        """Bloco de documentação, montado a partir das camadas do arquivo."""
         linhas = [
             "COPYRIGHT. Grant of use.",
             "These data are property of Universidade Presbiteriana Mackenzie.",
@@ -360,27 +595,17 @@ class HatsExport(object):
             "   LEVEL: {}   RESOLUTION: {}".format(produto.nivel, produto.resolucao),
             "",
         ]
-        if produto.janela is None:
-            linhas += [
-                "   LEVEL = raw: the time series exactly as registered by the instrument",
-                "   acquisition system, with no transformation applied.",
-                "",
-                "   " + AVISO_DO_SINAL_PICADO,
-            ]
-        else:
-            linhas += [
-                "   Derived by the arithmetic mean of each set of {} consecutive samples "
-                "within".format(produto.janela),
-                "   non-overlapping {} intervals.".format(produto.resolucao),
-                "",
-                "   " + AVISO_DA_MEDIA,
-            ]
-        linhas += [
-            "",
-            "ITEMS - Contains detailed observation data records",
-        ]
-        linhas.extend("   {}: {}".format(coluna.nome, coluna.descricao)
-                      for coluna in HatsExport._colunas(produto))
+        for nota in produto.notas:
+            linhas += ["   " + nota, ""]
+
+        linhas.append("ITEMS - Contains detailed observation data records")
+        if len(camadas) > 1:
+            linhas.append("   This file carries {} structures, one per table "
+                          "extension.".format(len(camadas)))
+        for camada in camadas:
+            linhas.append("   STRUCTURE {}: {}".format(camada.nome, camada.descricao))
+            linhas.extend("      {}: {}".format(coluna.nome, coluna.descricao)
+                          for coluna in camada.colunas)
         return linhas
 
     @staticmethod
@@ -394,12 +619,14 @@ class HatsExport(object):
             return str(int(valor))
         return utils.format_float(valor)
 
-    def _escreve_csv(self, caminho: str, registros, cabecalho, produto: Produto) -> None:
+    def _escreve_csv(self, caminho: str, registros, cabecalho, produto: Produto,
+                     camadas: Sequence[Camada]) -> None:
+        colunas = camadas[0].colunas
         with open(caminho, "w", encoding="utf-8", newline="") as arquivo:
             escritor = csv.writer(arquivo, delimiter="|", quoting=csv.QUOTE_MINIMAL)
 
             escritor.writerow(["#DOCUMENTATION", ""])
-            for linha in self._documentacao(produto):
+            for linha in self._documentacao(produto, camadas):
                 escritor.writerow([linha, ""])
             escritor.writerow([])
 
@@ -409,12 +636,12 @@ class HatsExport(object):
             escritor.writerow([])
 
             escritor.writerow(["#ITEMS", ""])
-            colunas = self._colunas(produto)
             escritor.writerow([coluna.nome for coluna in colunas])
             for registro in registros:
                 escritor.writerow([self._celula(coluna, registro) for coluna in colunas])
 
-    def _escreve_fits(self, caminho: str, registros, cabecalho, produto: Produto) -> None:
+    def _escreve_fits(self, caminho: str, registros, cabecalho, produto: Produto,
+                      camadas: Sequence[Camada]) -> None:
         try:
             from astropy.io import fits
         except ImportError as erro:                     # pragma: no cover
@@ -426,14 +653,18 @@ class HatsExport(object):
         primario.add_blank()
         for chave, valor in cabecalho:
             primario[chave] = valor
-        for linha in self._documentacao(produto):
+        for linha in self._documentacao(produto, camadas):
             primario.add_comment(linha)
 
-        colunas = [fits.Column(name=coluna.nome, format=coluna.fits,
-                               array=self._vetor(coluna, registros))
-                   for coluna in self._colunas(produto)]
-        tabela = fits.BinTableHDU.from_columns(fits.ColDefs(colunas), name="DataTable")
-        fits.HDUList([fits.PrimaryHDU(header=primario), tabela]).writeto(
+        tabelas = []
+        for camada in camadas:
+            colunas = [fits.Column(name=coluna.nome, format=coluna.fits,
+                                   array=self._vetor(coluna, registros))
+                       for coluna in camada.colunas]
+            tabelas.append(fits.BinTableHDU.from_columns(
+                fits.ColDefs(colunas), name=camada.nome))
+
+        fits.HDUList([fits.PrimaryHDU(header=primario)] + tabelas).writeto(
             caminho, overwrite=True)
 
     @staticmethod

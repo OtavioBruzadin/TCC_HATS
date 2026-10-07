@@ -60,6 +60,17 @@ class HatsInstrument(TimeSeriesIngestionAdapter, TimeSeriesExportAdapter):
     def GenerateCSVFileDerivedFormat1s(self, raw_records):
         return self._export.GenerateCSVFileDerivedFormat1s(raw_records)
 
+    # ------------------------------- um arquivo CSV por estrutura do level 0
+
+    def GenerateCSVFileRawCountsFormat(self, raw_records):
+        return self._export.GenerateCSVFileRawCountsFormat(raw_records)
+
+    def GenerateFitsFilePointingFormat(self, raw_records):
+        return self._export.GenerateFitsFilePointingFormat(raw_records)
+
+    def GenerateCSVFilePointingFormat(self, raw_records):
+        return self._export.GenerateCSVFilePointingFormat(raw_records)
+
     # ------------------------------------------- produto científico do HATS
 
     def GenerateFitsFileDeconvFormat32ms(self, raw_records):

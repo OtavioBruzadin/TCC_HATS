@@ -97,10 +97,17 @@ PRODUTOS = [
      "estado": "obrigatorio pelo §7.2; janela e media CONFIRMADAS pelo suporte"},
     {"conteudo": "AMPLITUDE DA MODULACAO DE 20 Hz — o dado cientifico do HATS",
      "nivel": "derived", "resolucao": "32ms (31,25 Hz)", "fonte": ".rbd",
-     "estado": "PENDENTE: nao esta entre os seis obrigatorios e depende de o catalogo "
-               "declarar. Sem ele o HATS publica apenas a portadora e medias dela"},
+     "estado": "IMPLEMENTADO, nome de metodo PENDENTE: nao esta entre os seis "
+               "obrigatorios e depende de o catalogo declarar. Sem ele o HATS publica "
+               "apenas a portadora e medias dela"},
+    {"conteudo": "contagem crua do ADC, sem a reta de calibracao (rData do HATS.py)",
+     "nivel": "raw", "resolucao": "1ms", "fonte": ".rbd",
+     "estado": "IMPLEMENTADO, nome de metodo PENDENTE: no FITS e a primeira camada do "
+               "produto bruto; no CSV, que e plano, e um arquivo proprio"},
     {"conteudo": "apontamento como lido", "nivel": "raw", "resolucao": "1050ms",
-     "fonte": ".aux", "estado": "PENDENTE: depende de fonte RAW propria"},
+     "fonte": ".aux",
+     "estado": "IMPLEMENTADO, nome de metodo PENDENTE: as doze colunas que o criador "
+               "do instrumento listou"},
     {"conteudo": "estacao meteorologica como lida", "nivel": "raw", "resolucao": "5s",
      "fonte": ".ws", "estado": "PENDENTE: depende de fonte RAW propria"},
 ]
@@ -110,7 +117,7 @@ def spec_minimo():
     """O spec que o pipeline monta; aqui só o necessário para chamar o load_data."""
     return InstrumentIngestionRuntimeSpec(
         instrument_name="HATS", time_field="UTC_TIME",
-        native_resolutions_by_mode={"DEFAULT": "1ms"},
+        native_resolutions_by_mode={"DETECTOR": "1ms", "POINTING": "1050ms"},
         scan_ignore_dirs=[], include_prefixes=["hats-"], include_suffixes=[],
         include_extensions=[".rbd", ".aux", ".ws"], exclude_extensions=[],
         exclude_suffixes=[], processed_dir_name="00_processed",
