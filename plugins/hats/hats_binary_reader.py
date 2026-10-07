@@ -38,6 +38,12 @@ KIND_BY_SUFFIX = {".rbd": "rbd", ".aux": "aux"}
 # Ordem de preferência: o formato vigente primeiro.
 DETECTOR_CHANNEL_NAMES = ("golay", "adcu")
 
+# Sufixo das colunas que trazem a contagem do ADC com o sinal estendido, antes da
+# reta de calibração. O HATS.py mantém as duas versões em estruturas separadas —
+# rData com a contagem e cData com o valor físico — e o Guigue pediu as duas no
+# FITS de level 0, em camadas próprias.
+SUFIXO_CRU = "_adcu"
+
 
 def resolve_xml_directory(xml_dir: Optional[str] = None) -> Path:
     """
@@ -166,9 +172,12 @@ def _calibrator(schema: Dict[str, Any]):
 def iter_calibrated_blocks(path: Path, schema: Dict[str, Any],
                            record_limit: Optional[int] = None) -> Iterator[Tuple[Dict[str, List], int]]:
     """
-    Percorre o arquivo em blocos, entregando colunas já em unidade física.
+    Percorre o arquivo em blocos, entregando as colunas em duas versões.
 
-    Produz tuplas ({nome_do_campo: lista_de_valores}, quantidade).
+    Produz tuplas ({nome_do_campo: lista_de_valores}, quantidade). Cada canal do
+    AD7770 aparece duas vezes: `golay` com o valor físico e `golay_adcu` com a
+    contagem de sinal estendido que o originou. São as estruturas cData e rData do
+    HATS.py, e o level 0 precisa das duas.
 
     O POEMAS lê o arquivo inteiro de uma vez com `np.fromfile` e devolve o array.
     Aqui não: uma hora de HATS são 137 MB de binário antes de virar registro, e
@@ -184,6 +193,9 @@ def iter_calibrated_blocks(path: Path, schema: Dict[str, Any],
             coluna = colunas[posicao]
             if do_adc:
                 coluna = calibration.decode_column(coluna)
+                # A contagem com sinal estendido, antes da reta. É o conteúdo do
+                # rData do HATS.py, que o level 0 precisa ter ao lado do cData.
+                bloco[nome + SUFIXO_CRU] = coluna
             if ganho is not None:
                 coluna = [valor * ganho + offset for valor in coluna]
             # Lista sempre, inclusive nos campos que não passam por calibração. O

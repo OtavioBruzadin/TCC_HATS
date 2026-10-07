@@ -179,11 +179,43 @@ class TestBlocosCalibrados(ReaderTestCase):
         self.assertEqual(total, self.dia["samples"])
 
     def test_cada_bloco_traz_todos_os_campos(self):
+        """
+        Cada canal do AD7770 aparece duas vezes: o valor físico e a contagem de
+        sinal estendido que o originou. São as estruturas cData e rData do HATS.py.
+        """
         bloco, quantidade = next(reader.iter_calibrated_blocks(self.dia["rbd"], self.esquema))
-        self.assertEqual(sorted(bloco), sorted(c["name"] for c in self.esquema["fields"]))
+
+        declarados = [c["name"] for c in self.esquema["fields"]]
+        do_adc = [c["name"] for c in self.esquema["fields"] if c.get("origin") == "ad7770"]
+        esperados = declarados + [nome + reader.SUFIXO_CRU for nome in do_adc]
+        self.assertEqual(sorted(bloco), sorted(esperados))
+
         for nome, coluna in bloco.items():
             with self.subTest(campo=nome):
                 self.assertEqual(len(coluna), quantidade)
+
+    def test_a_contagem_crua_e_o_valor_fisico_sao_coerentes(self):
+        """
+        O valor físico tem de ser exatamente a contagem passada pela reta declarada
+        no XML — senão rData e cData contariam histórias diferentes do mesmo dado.
+        """
+        bloco, _ = next(reader.iter_calibrated_blocks(self.dia["rbd"], self.esquema,
+                                                     record_limit=64))
+        for campo in self.esquema["fields"]:
+            if campo.get("origin") != "ad7770":
+                continue
+            nome = campo["name"]
+            with self.subTest(campo=nome):
+                ganho = float(campo.get("slope", 1.0))
+                offset = float(campo.get("offset", 0.0))
+                for cru, fisico in zip(bloco[nome + reader.SUFIXO_CRU], bloco[nome]):
+                    self.assertAlmostEqual(cru * ganho + offset, fisico, places=12)
+
+    def test_a_contagem_crua_e_inteira(self):
+        bloco, _ = next(reader.iter_calibrated_blocks(self.dia["rbd"], self.esquema,
+                                                     record_limit=16))
+        for valor in bloco["golay" + reader.SUFIXO_CRU]:
+            self.assertIsInstance(valor, int)
 
     def test_o_husec_sai_cru_e_o_detector_em_mV(self):
         bloco, _ = next(reader.iter_calibrated_blocks(self.dia["rbd"], self.esquema))

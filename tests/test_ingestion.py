@@ -141,7 +141,20 @@ class TestEstruturaDoRegistro(IngestionTestCase):
         self.assertEqual(sorted(self.registros[0]),
                          sorted(["UTC_TIME", "HUSEC", "PROC_SEQ", "FULL_FILE_PATH",
                                  "SAMPLE", "SEC", "MS",
-                                 "GOLAY", "CHOPPER", "TEMP_HICS", "TEMP_ENV", "TEMP_GOLAY"]))
+                                 "GOLAY", "CHOPPER", "TEMP_HICS", "TEMP_ENV", "TEMP_GOLAY",
+                                 "GOLAY_ADCU", "CHOPPER_ADCU", "TEMP_HICS_ADCU",
+                                 "TEMP_ENV_ADCU", "TEMP_GOLAY_ADCU"]))
+
+    def test_o_registro_guarda_a_contagem_crua_e_o_valor_fisico(self):
+        """
+        O Guigue pediu rData e cData lado a lado no level 0: a contagem do ADC com
+        sinal estendido e o valor na unidade física que ela gera.
+        """
+        primeiro = self.registros[0]
+        for canal in ("GOLAY", "CHOPPER", "TEMP_HICS", "TEMP_ENV", "TEMP_GOLAY"):
+            with self.subTest(canal=canal):
+                self.assertIsInstance(primeiro[canal + "_ADCU"], int)
+                self.assertIsInstance(primeiro[canal], float)
 
     def test_a_procedencia_e_so_o_FULL_FILE_PATH(self):
         """
