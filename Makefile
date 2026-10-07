@@ -29,7 +29,7 @@ DATA    ?= $(HATS_DATA_InputPath)
 ZIP     ?= $(HOME)/Downloads/HATS_software.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help test descreve descreve-demo descreve-arquivo dicionario dicionario-demo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
+.PHONY: help test test-real descreve descreve-demo descreve-arquivo dicionario dicionario-demo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
 
 help:
 	@echo ""
@@ -54,6 +54,7 @@ help:
 	@echo "    make dicionario          dicionário de dados dos arquivos -> Descricao/"
 	@echo ""
 	@echo "    make test                suíte de testes"
+	@echo "    make test-real           idem, incluindo os testes sobre os dados reais"
 	@echo "    make bench               desempenho dos backends"
 	@echo "    make bench-craam         idem, incluindo o HATS.py do CRAAM"
 	@echo "    make craam-shell         sessão Python com o HATS.py deles carregado"
@@ -147,6 +148,11 @@ diff: check-reference check-data
 
 test:
 	$(PYTHON) -m unittest discover -s tests -t . -v
+
+# Os testes que leem os arquivos reais só rodam quando o caminho é passado, para
+# que `make test` continue funcionando em qualquer máquina.
+test-real: check-data
+	HATS_TEST_DATA="$(DATA)" $(PYTHON) -m unittest discover -s tests -t . -v
 
 bench:
 	$(PYTHON) tools/benchmark.py

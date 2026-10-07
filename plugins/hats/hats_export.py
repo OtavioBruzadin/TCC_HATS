@@ -25,7 +25,7 @@ diretório temporário, devolve o caminho, e acabou.
 
 Uma tabela de colunas para os dois escritores
 ---------------------------------------------
-FITS e CSV saem da mesma lista em `COLUNAS_RAW`. No plugin do POEMAS a lista
+FITS e CSV saem da mesma lista de colunas. No plugin do POEMAS a lista
 aparece duas vezes, uma em cada escritor, e as duas precisam ser mantidas em
 acordo à mão — é o tipo de duplicação que fica errada em silêncio.
 
@@ -44,10 +44,11 @@ from __future__ import annotations
 import csv
 import os
 import statistics
+from datetime import timedelta
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
 
-from hats import constants
+from hats import constants, demodulation
 
 from external_contracts.time_series_specialist_generated_file import (
     TimeSeriesSpecialistGeneratedFile)
@@ -85,6 +86,16 @@ COLUNAS_RAW: Sequence[Coluna] = (
 
 # Janelas derivadas da resolução alvo, como o suporte confirmou. A 1 kHz, 0,1 s
 # são 100 amostras e 1 s são 1000.
+# As três colunas da estrutura Deconv do HATS.py: time, husec e amplitude.
+COLUNAS_DECONV: Sequence[Coluna] = (
+    COLUNA_DE_TEMPO,
+    Coluna("HUSEC", "HUSEC", "K",
+           "Hundredths of a millisecond since 0 UT, at the centre of the analysis "
+           "window", tipo="int"),
+    Coluna("AMPLITUDE", "AMPLITUDE", "D",
+           "Amplitude of the 20 Hz modulation of the detector signal (mV)"),
+)
+
 JANELA_100MS = int(constants.SAMPLING_FREQUENCY * 0.1)
 JANELA_1S = int(constants.SAMPLING_FREQUENCY * 1.0)
 
@@ -97,10 +108,11 @@ class Produto:
     chave: str
     resolucao: str
     nivel: str
-    janela: Optional[int]      # None para RAW, que não agrega
+    janela: Optional[int]      # None para RAW e para o demodulado, que não agregam
 
 
 PRODUTO_RAW = Produto(utils.PRODUTO_RAW, utils.RESOLUCAO_RAW, "raw", None)
+PRODUTO_DECONV = Produto(utils.PRODUTO_DECONV, utils.RESOLUCAO_DECONV, "derived", None)
 PRODUTO_100MS = Produto(utils.PRODUTO_100MS, utils.RESOLUCAO_100MS, "derived", JANELA_100MS)
 PRODUTO_1S = Produto(utils.PRODUTO_1S, utils.RESOLUCAO_1S, "derived", JANELA_1S)
 
@@ -168,6 +180,60 @@ class HatsExport(object):
         derivados = self._derive_raw_to_fixed_windows(raw_records, JANELA_1S)
         return self._escreve(derivados, PRODUTO_1S, "CSV", "csv")
 
+    # ------------------------------------------- produto científico do HATS
+
+    def GenerateFitsFileDeconvFormat32ms(self, raw_records: List[Dict[str, Any]]):
+        return self._escreve(self._demodulate(raw_records), PRODUTO_DECONV, "FITS", "fits")
+
+    def GenerateCSVFileDeconvFormat32ms(self, raw_records: List[Dict[str, Any]]):
+        return self._escreve(self._demodulate(raw_records), PRODUTO_DECONV, "CSV", "csv")
+
+    @staticmethod
+    def _demodulate(raw_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        A amplitude da modulação de 20 Hz, que é o sinal científico do HATS.
+
+        Equivale à estrutura Deconv que o `getFFT()` do HATS.py cria: Goertzel com
+        janela flat-top de 128 amostras deslocando de 32 em 32, saída a 31,25 Hz, e
+        o husec de cada janela é o do seu centro.
+
+        A conta inteira é do pacote `hats`, que reproduz o `HATS_fft.c` bit a bit —
+        confrontado com o binário que o CRAAM distribui. Aqui não há cálculo, só o
+        empacotamento no formato de registro.
+        """
+        if len(raw_records) < constants.WINDOW_SIZE:
+            raise InsufficientRecords(
+                "a demodulacao precisa de ao menos {} amostras para fechar uma janela, "
+                "e veio {}".format(constants.WINDOW_SIZE, len(raw_records)))
+
+        husec = [int(r["HUSEC"]) for r in raw_records]
+
+        # A janela deslizante pressupõe amostras contíguas e em ordem. A ingestão
+        # garante isso, mas estes registros vêm do banco, e uma consulta que os
+        # devolvesse fora de ordem produziria uma amplitude sem significado — em
+        # silêncio, porque a conta não falha, só erra.
+        for posicao in range(1, len(husec)):
+            if husec[posicao] <= husec[posicao - 1]:
+                raise ValueError(
+                    "registros fora de ordem na posicao {}: husec {} vem depois de {}. "
+                    "A demodulacao pressupoe amostragem contigua e crescente".format(
+                        posicao, husec[posicao], husec[posicao - 1]))
+
+        sinal = [float(r["GOLAY"]) for r in raw_records]
+        husecs, amplitudes = demodulation.demodulate(
+            sinal, husec,
+            window_size=constants.WINDOW_SIZE, steps=constants.STEPS,
+            target_frequency=constants.TARGET_FREQUENCY,
+            sampling_frequency=constants.SAMPLING_FREQUENCY)
+
+        # O carimbo é reconstruído do husec da janela, e não escolhido entre os
+        # registros de entrada, para a coluna de tempo seguir coerente com a de husec.
+        primeiro = utils.as_utc(raw_records[0][utils.TIME_FIELD])
+        meia_noite = primeiro.replace(hour=0, minute=0, second=0, microsecond=0)
+        return [{utils.TIME_FIELD: meia_noite + timedelta(microseconds=int(h) * 100),
+                 "HUSEC": int(h), "AMPLITUDE": float(a)}
+                for h, a in zip(husecs, amplitudes)]
+
     # ------------------------------------------------------------- derivação
 
     @staticmethod
@@ -204,6 +270,10 @@ class HatsExport(object):
         return derivados
 
     # ------------------------------------------------------------ escritores
+
+    @staticmethod
+    def _colunas(produto: Produto) -> Sequence[Coluna]:
+        return COLUNAS_DECONV if produto.chave == utils.PRODUTO_DECONV else COLUNAS_RAW
 
     def _escreve(self, registros: List[Dict[str, Any]], produto: Produto,
                  fmt: str, extensao: str):
@@ -310,7 +380,7 @@ class HatsExport(object):
             "ITEMS - Contains detailed observation data records",
         ]
         linhas.extend("   {}: {}".format(coluna.nome, coluna.descricao)
-                      for coluna in COLUNAS_RAW)
+                      for coluna in HatsExport._colunas(produto))
         return linhas
 
     @staticmethod
@@ -339,9 +409,10 @@ class HatsExport(object):
             escritor.writerow([])
 
             escritor.writerow(["#ITEMS", ""])
-            escritor.writerow([coluna.nome for coluna in COLUNAS_RAW])
+            colunas = self._colunas(produto)
+            escritor.writerow([coluna.nome for coluna in colunas])
             for registro in registros:
-                escritor.writerow([self._celula(coluna, registro) for coluna in COLUNAS_RAW])
+                escritor.writerow([self._celula(coluna, registro) for coluna in colunas])
 
     def _escreve_fits(self, caminho: str, registros, cabecalho, produto: Produto) -> None:
         try:
@@ -360,7 +431,7 @@ class HatsExport(object):
 
         colunas = [fits.Column(name=coluna.nome, format=coluna.fits,
                                array=self._vetor(coluna, registros))
-                   for coluna in COLUNAS_RAW]
+                   for coluna in self._colunas(produto)]
         tabela = fits.BinTableHDU.from_columns(fits.ColDefs(colunas), name="DataTable")
         fits.HDUList([fits.PrimaryHDU(header=primario), tabela]).writeto(
             caminho, overwrite=True)

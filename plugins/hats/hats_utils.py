@@ -41,6 +41,8 @@ PRODUTO_100MS = "derived_100ms"
 RESOLUCAO_100MS = "100ms"
 PRODUTO_1S = "derived_1s"
 RESOLUCAO_1S = "1s"
+PRODUTO_DECONV = "deconv_32ms"
+RESOLUCAO_DECONV = "32ms"
 
 # O guia §6 exige este nome exato no registro.
 TIME_FIELD = "UTC_TIME"
