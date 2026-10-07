@@ -10,10 +10,14 @@ Implementa o `load_data(spec, file_full_path)` do §5.1, com os cinco passos que
     4. garantir consistência temporal -> aqui
     5. retornar no formato padrão   -> TimeSeriesLoadDataResult
 
-Escopo desta etapa: só o `.rbd`, o sinal do detector. O `.aux` e o `.ws` têm
-cadências próprias e dependem de o catálogo declarar fontes RAW separadas, o que
-ainda não foi definido — então são recusados com mensagem explícita em vez de
-entrarem por um caminho improvisado.
+Duas fontes, como o SST faz com FAST e INTG: o `.rbd` com o sinal do detector a
+1 kHz e o `.aux` com o apontamento a ~1,05 s. Cada uma é um modo de aquisição e
+vira uma fonte RAW própria no catálogo; o `.ws` ainda não entra.
+
+O apontamento traz as doze variáveis que o Guigue listou: husec, jd, sid,
+elevation, azimuth, right_ascension, declination, ra_rate, dec_rate, object,
+opmode e o carimbo — que no `HATS.py` se chama `time` e aqui é o `UTC_TIME` que o
+§6 exige.
 
 Procedência
 -----------
@@ -62,12 +66,21 @@ UTC = timezone.utc
 # O guia §6 exige um campo com este nome exato, contendo a data completa.
 TIME_FIELD = "UTC_TIME"
 
-# O POEMAS declara um modo único com este nome, e é o que seguimos enquanto o
-# catálogo do HATS não declarar fontes RAW separadas por tipo de arquivo.
-DEFAULT_MODE = "DEFAULT"
+# Um modo por tipo de arquivo, como o SST declara FAST e INTG. O POEMAS usa um
+# modo único chamado DEFAULT porque tem uma fonte só.
+MODE_DETECTOR = "DETECTOR"
+MODE_POINTING = "POINTING"
 
-# Passo esperado entre amostras consecutivas: 1 kHz = 1 ms = 10 husec.
-EXPECTED_HUSEC_STEP = constants.HUSEC_PER_SAMPLE
+MODE_BY_SUFFIX = {".rbd": MODE_DETECTOR, ".aux": MODE_POINTING}
+
+# Resolução nativa de cada modo, quando o spec não a traz. A do apontamento é
+# medida: 1,0507 s em média, alternando entre 10480 e 10520 husec.
+FALLBACK_RESOLUTION = {MODE_DETECTOR: "1ms", MODE_POINTING: "1050ms"}
+
+# Passo esperado entre amostras consecutivas do detector: 1 kHz = 1 ms = 10 husec.
+# O apontamento não tem passo fixo — é um laço de software com jitter de ±2 ms —,
+# então para ele não há lacuna a reportar, só monotonicidade a exigir.
+EXPECTED_HUSEC_STEP = {MODE_DETECTOR: constants.HUSEC_PER_SAMPLE, MODE_POINTING: None}
 
 
 class HatsIngestion(TimeSeriesIngestionAdapter):
@@ -94,11 +107,11 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
     ) -> TimeSeriesLoadDataResult:
         path = Path(file_full_path)
 
-        if path.suffix.lower() != ".rbd":
+        mode = MODE_BY_SUFFIX.get(path.suffix.lower())
+        if mode is None:
             raise ValueError(
-                "esta ingestao le apenas .rbd, o sinal do detector. O {} tem cadencia "
-                "propria e depende de o catalogo do HATS declarar uma fonte RAW para "
-                "ele".format(path.suffix or path.name))
+                "esta ingestao le .rbd (detector) e .aux (apontamento). O {} nao tem "
+                "fonte RAW declarada".format(path.suffix or path.name))
 
         # Passos 1 e 2 do §5.3: ler e interpretar o formato.
         cabecalho, schema, blocos = reader.read_and_decode_hats_file(
@@ -110,7 +123,7 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
                 "hats-YYYY-MM-DDTHHMM.rbd".format(path.name))
 
         # Passos 3 e 4: converter e verificar.
-        registros, consistencia = self._build_records(cabecalho, blocos)
+        registros, consistencia = self._build_records(cabecalho, blocos, mode)
 
         if not registros:
             descartados = consistencia["records_dropped_before_hour"]
@@ -130,25 +143,22 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
         # Passo 5: retornar no formato padrão.
         return TimeSeriesLoadDataResult(
             instrument_name=getattr(spec, "instrument_name", None) or "HATS",
-            acquisition_mode=DEFAULT_MODE,
-            data_time_resolution=self._resolution(spec),
+            acquisition_mode=mode,
+            data_time_resolution=self._resolution(spec, mode),
             data_level="raw",
             observation_day=self._observation_day(cabecalho["DATE"]),
             data_records=registros,
-            instrument_metadata=self._metadata(cabecalho, schema, registros, consistencia),
+            instrument_metadata=self._metadata(cabecalho, schema, registros, consistencia, mode),
             source_file_path=str(path),
             processing_warnings=self._warnings(consistencia),
         )
 
     # ------------------------------------------------------------- utilidades
 
-    def _resolution(self, spec: InstrumentIngestionRuntimeSpec) -> str:
-        """
-        Resolução nativa, vinda do spec — que o pipeline monta a partir do bloco
-        `ingestion` do catálogo. O padrão descreve o instrumento: 1 kHz = 1 ms.
-        """
+    def _resolution(self, spec: InstrumentIngestionRuntimeSpec, mode: str) -> str:
+        """Resolução nativa, vinda do spec; o padrão descreve o instrumento."""
         declarado = getattr(spec, "native_resolutions_by_mode", None) or {}
-        return declarado.get(DEFAULT_MODE) or "1ms"
+        return declarado.get(mode) or FALLBACK_RESOLUTION[mode]
 
     @staticmethod
     def _observation_day(date_text: str) -> datetime:
@@ -177,8 +187,8 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
 
     # ------------------------------------------------- passos 3 e 4 do §5.3
 
-    def _build_records(self, cabecalho: Dict[str, Any],
-                       blocos) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    def _build_records(self, cabecalho: Dict[str, Any], blocos,
+                       mode: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
         Converte blocos de colunas em registros, verificando o tempo no caminho.
 
@@ -190,7 +200,7 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
         day_base = datetime(int(date_text[0:4]), int(date_text[5:7]), int(date_text[8:10]),
                             tzinfo=UTC)
         threshold = self._hour_threshold(cabecalho["HOUR"])
-        detector = cabecalho["DETECTOR_CHANNEL"]
+        passo_esperado = EXPECTED_HUSEC_STEP[mode]
 
         # Uma string, referenciada por todos os registros do arquivo.
         caminho_de_origem = cabecalho["FULL_FILE_PATH"]
@@ -224,7 +234,9 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
                             "ser ingerido — a serie ficaria irrecuperavel no banco".format(
                                 cabecalho["FILENAME"], husec, anterior, passo,
                                 "duplicado" if passo == 0 else "decrescente"))
-                    if passo != EXPECTED_HUSEC_STEP:
+                    # O apontamento não tem passo fixo, então lacuna não se
+                    # aplica a ele: só monotonicidade, exigida acima.
+                    if passo_esperado is not None and passo != passo_esperado:
                         lacunas.append((anterior, husec))
                 anterior = husec
 
@@ -242,10 +254,17 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
                 registros.append(registro)
                 sequencia += 1
 
+        # jd == 0 marca o registro de apontamento defasado: o husec está certo, mas
+        # a solução é de cerca de 1053 s antes. Entre 3,5% e 10% dos registros, nos
+        # dias medidos. Quem for interpolar o apontamento precisa saber disso.
+        defasados = sum(1 for r in registros if r.get("JD") == 0.0) if mode == MODE_POINTING else 0
+
         consistencia = {
             "records_dropped_before_hour": descartados,
             "gaps": lacunas,
-            "detector_channel": detector,
+            "stale_pointing": defasados,
+            "expected_step": passo_esperado,
+            "detector_channel": cabecalho.get("DETECTOR_CHANNEL"),
             "husec_first": registros[0]["HUSEC"] if registros else None,
             "husec_last": registros[-1]["HUSEC"] if registros else None,
         }
@@ -255,20 +274,24 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
 
     @staticmethod
     def _metadata(cabecalho: Dict[str, Any], schema: Dict[str, Any],
-                  registros: List[Dict[str, Any]], consistencia: Dict[str, Any]) -> Dict[str, Any]:
-        perdidas = sum((fim - inicio) // EXPECTED_HUSEC_STEP - 1
-                       for inicio, fim in consistencia["gaps"])
-        return {
+                  registros: List[Dict[str, Any]], consistencia: Dict[str, Any],
+                  mode: str) -> Dict[str, Any]:
+        passo = EXPECTED_HUSEC_STEP[mode]
+        perdidas = (sum((fim - inicio) // passo - 1 for inicio, fim in consistencia["gaps"])
+                    if passo else 0)
+        extra = ({"stale_pointing_records": consistencia["stale_pointing"]}
+                 if mode == MODE_POINTING else
+                 {"detector_channel": consistencia["detector_channel"],
+                  "acquisition": {
+                      "sampling_frequency_hz": constants.SAMPLING_FREQUENCY,
+                      "chopper_frequency_hz": constants.TARGET_FREQUENCY}})
+        return dict(extra, **{
             "source": cabecalho["FULL_FILE_PATH"],
+            "acquisition_mode": mode,
             "observation_date": cabecalho["DATE"],
             "observation_hour": cabecalho["HOUR"],
             "time_field": TIME_FIELD,
             "schema": dict(cabecalho["SCHEMA"], record_size=cabecalho["RECORD_SIZE"]),
-            "detector_channel": consistencia["detector_channel"],
-            "acquisition": {
-                "sampling_frequency_hz": constants.SAMPLING_FREQUENCY,
-                "chopper_frequency_hz": constants.TARGET_FREQUENCY,
-            },
             "records_in_file": cabecalho["NREC"],
             "records_kept": len(registros),
             "records_dropped_before_hour": consistencia["records_dropped_before_hour"],
@@ -276,11 +299,18 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
             "husec_last": consistencia["husec_last"],
             "time_gaps": len(consistencia["gaps"]),
             "samples_missing_in_gaps": perdidas,
-        }
+        })
 
     @staticmethod
     def _warnings(consistencia: Dict[str, Any]) -> List[str]:
         avisos: List[str] = []
+
+        defasados = consistencia.get("stale_pointing")
+        if defasados:
+            avisos.append(
+                "{} registros de apontamento trazem jd == 0: o husec esta correto, mas a "
+                "solucao de apontamento e de cerca de 1053 s antes. Interpolar sem "
+                "filtra-los contamina o resultado".format(defasados))
 
         descartados = consistencia["records_dropped_before_hour"]
         if descartados:
@@ -291,7 +321,8 @@ class HatsIngestion(TimeSeriesIngestionAdapter):
 
         lacunas = consistencia["gaps"]
         if lacunas:
-            perdidas = sum((fim - inicio) // EXPECTED_HUSEC_STEP - 1 for inicio, fim in lacunas)
+            passo = consistencia["expected_step"]
+            perdidas = sum((fim - inicio) // passo - 1 for inicio, fim in lacunas)
             primeira = lacunas[0]
             avisos.append(
                 "{} lacuna(s) na serie temporal, somando cerca de {} amostras que o "

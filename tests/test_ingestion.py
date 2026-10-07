@@ -34,9 +34,9 @@ def um_spec(resolucao="1ms"):
     return InstrumentIngestionRuntimeSpec(
         instrument_name="HATS",
         time_field="UTC_TIME",
-        native_resolutions_by_mode={"DEFAULT": resolucao},
+        native_resolutions_by_mode={"DETECTOR": resolucao, "POINTING": "1050ms"},
         scan_ignore_dirs=[], include_prefixes=["hats-"], include_suffixes=[],
-        include_extensions=[".rbd"], exclude_extensions=[], exclude_suffixes=[],
+        include_extensions=[".rbd", ".aux"], exclude_extensions=[], exclude_suffixes=[],
         processed_dir_name="00_processed", ignored_dir_name="00_ignored",
         invalid_format_dir_name="99_formato_invalid")
 
@@ -257,15 +257,79 @@ class TestDescarteAntesDaHora(IngestionTestCase):
         self.assertEqual([r["PROC_SEQ"] for r in registros], [0, 1])
 
 
+class TestApontamento(IngestionTestCase):
+    """
+    A segunda fonte RAW, como o SST tem FAST e INTG. O Guigue listou doze variáveis
+    para o apontamento: onze estão no XML e a décima segunda é o carimbo, que no
+    HATS.py se chama `time` e aqui é o UTC_TIME que o §6 exige.
+    """
+
+    CAMPOS_DO_GUIGUE = ("HUSEC", "JD", "SID", "ELEVATION", "AZIMUTH", "RIGHT_ASCENSION",
+                        "DECLINATION", "RA_RATE", "DEC_RATE", "OBJECT", "OPMODE",
+                        "UTC_TIME")
+
+    def setUp(self):
+        super().setUp()
+        self.dia = fixtures.build_day(self.root)
+        self.resultado = self.ingestion.load_data(self.spec, str(self.dia["aux"]))
+
+    def test_o_modo_e_a_resolucao(self):
+        self.assertEqual(self.resultado.acquisition_mode, hats_ingestion.MODE_POINTING)
+        self.assertEqual(self.resultado.data_time_resolution, "1050ms")
+        self.assertEqual(self.resultado.data_level, "raw")
+
+    def test_traz_as_doze_variaveis_que_o_guigue_listou(self):
+        primeiro = self.resultado.data_records[0]
+        for campo in self.CAMPOS_DO_GUIGUE:
+            with self.subTest(campo=campo):
+                self.assertIn(campo, primeiro)
+
+    def test_um_registro_por_linha_do_arquivo(self):
+        self.assertEqual(len(self.resultado.data_records), self.dia["aux_records"])
+
+    def test_o_carimbo_vem_do_husec(self):
+        primeiro = self.resultado.data_records[0]
+        esperado = primeiro["HUSEC"] * 100
+        meia_noite = datetime(2026, 3, 17, tzinfo=timezone.utc)
+        self.assertEqual(
+            (primeiro["UTC_TIME"] - meia_noite).total_seconds() * 1e6, esperado)
+
+    def test_relata_os_registros_defasados(self):
+        """
+        jd == 0 marca apontamento de ~1053 s antes. O Guigue pediu interpolação no
+        level 1, e interpolar sobre esses registros contamina o resultado — então o
+        número tem de chegar a quem consome.
+        """
+        defasados = sum(1 for r in self.resultado.data_records if r["JD"] == 0.0)
+        self.assertEqual(defasados, self.dia["aux_stale"])
+        self.assertEqual(self.resultado.instrument_metadata["stale_pointing_records"],
+                         self.dia["aux_stale"])
+        self.assertTrue(any("1053" in a for a in self.resultado.processing_warnings))
+
+    def test_o_apontamento_nao_reporta_lacuna(self):
+        """
+        A cadência é de um laço de software, com jitter de ±2 ms entre 10480 e 10520
+        husec. Medir lacuna contra um passo fixo acusaria todos os registros.
+        """
+        self.assertEqual(self.resultado.instrument_metadata["time_gaps"], 0)
+
+    def test_husec_fora_de_ordem_no_apontamento_tambem_falha(self):
+        quebrado = self.dia["aux"].parent / "hats-2026-03-17T1900.aux"
+        with quebrado.open("wb") as handle:
+            for husec in (HORA, HORA + 10500, HORA + 5000):
+                handle.write(struct.pack(fixtures.AUX_FORMAT, husec, 2461117.25, 1.0,
+                                         54.0, 326.0, 23.8, -1.0, 0.03, 0.01, 11, 0))
+        with self.assertRaises(ValueError):
+            self.ingestion.load_data(self.spec, str(quebrado))
+
+
 class TestRecusas(IngestionTestCase):
 
-    def test_aux_e_ws_sao_recusados_com_explicacao(self):
+    def test_ws_e_recusado_com_explicacao(self):
         dia = fixtures.build_day(self.root)
-        for caminho in (dia["aux"], dia["ws"]):
-            with self.subTest(arquivo=caminho.name):
-                with self.assertRaises(ValueError) as capturado:
-                    self.ingestion.load_data(self.spec, str(caminho))
-                self.assertIn("fonte RAW", str(capturado.exception))
+        with self.assertRaises(ValueError) as capturado:
+            self.ingestion.load_data(self.spec, str(dia["ws"]))
+        self.assertIn("fonte RAW", str(capturado.exception))
 
     def test_nome_fora_da_convencao_falha(self):
         fora = self.root / "detector.rbd"

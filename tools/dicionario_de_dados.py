@@ -61,9 +61,9 @@ PRODUTOS = (hats_export.PRODUTO_RAW, hats_export.PRODUTO_100MS, hats_export.PROD
 def um_spec():
     return InstrumentIngestionRuntimeSpec(
         instrument_name="HATS", time_field="UTC_TIME",
-        native_resolutions_by_mode={"DEFAULT": "1ms"},
+        native_resolutions_by_mode={"DETECTOR": "1ms", "POINTING": "1050ms"},
         scan_ignore_dirs=[], include_prefixes=["hats-"], include_suffixes=[],
-        include_extensions=[".rbd"], exclude_extensions=[], exclude_suffixes=[],
+        include_extensions=[".rbd", ".aux"], exclude_extensions=[], exclude_suffixes=[],
         processed_dir_name="00_processed", ignored_dir_name="00_ignored",
         invalid_format_dir_name="99_formato_invalid")
 
