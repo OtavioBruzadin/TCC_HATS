@@ -22,6 +22,33 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
+# O pacote `hats` é a engenharia do instrumento: leitura dos binários, calibração e
+# demodulação, tudo confrontado com o código do CRAAM. O plugin depende dele, e o
+# bloco `plugin.dependencies` do catálogo é explícito sobre de quem é esse
+# requisito: "o instrumento executa no mesmo ambiente Python do core. Todas as
+# dependencias importadas no arquivo do instrumento devem estar instaladas no
+# ambiente do job."
+#
+# Carregado pelo caminho, como o §13.2 manda, o diretório que contém o pacote não
+# entra no sys.path sozinho. Sem a dependência atendida o import falhava com um
+# `ModuleNotFoundError: No module named 'hats'` seco, três módulos abaixo daqui, sem
+# dizer o que era `hats` nem o que fazer. Esta checagem troca isso por uma mensagem
+# que diz as duas coisas — e falha na primeira linha, não no meio da ingestão.
+try:
+    import hats                                                          # noqa: F401
+except ModuleNotFoundError as erro:
+    if erro.name != "hats":
+        raise
+    raise ImportError(
+        "o plugin do HATS depende do pacote Python `hats`, que nao esta importavel "
+        "neste ambiente.\n\n"
+        "Ele e a engenharia do instrumento: leitura dos .rbd e .aux, calibracao do "
+        "AD7770 e demodulacao. E Python puro, sem nenhuma dependencia externa, "
+        "entao atender o requisito e colocar o diretorio do pacote no ambiente do "
+        "job — instalado, ou num diretorio do PYTHONPATH — como o bloco "
+        "plugin.dependencies do catalogo exige.\n\n"
+        "Procurado em:\n  {}".format("\n  ".join(sys.path[:8]))) from erro
+
 from external_contracts.time_series_export_adapter import TimeSeriesExportAdapter
 from external_contracts.time_series_ingestion_adapter import TimeSeriesIngestionAdapter
 from hats_export import HatsExport

@@ -29,7 +29,7 @@ DATA    ?= $(HATS_DATA_InputPath)
 ZIP     ?= $(HOME)/Downloads/HATS_software.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help test test-real descreve descreve-demo descreve-arquivo dicionario dicionario-demo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
+.PHONY: help test test-real descreve descreve-demo descreve-arquivo dicionario dicionario-demo pipeline-falso pipeline-falso-demo pipeline-falso-catalogo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
 
 help:
 	@echo ""
@@ -52,6 +52,8 @@ help:
 	@echo "    make descreve-demo       idem, sobre Amostra/"
 	@echo "    make descreve-arquivo    grava a descrição em texto e JSON -> Descricao/"
 	@echo "    make dicionario          dicionário de dados dos arquivos -> Descricao/"
+	@echo "    make pipeline-falso      roda o fluxo do pipeline sobre o plugin"
+	@echo "    make pipeline-falso-demo idem, sobre Amostra/"
 	@echo ""
 	@echo "    make test                suíte de testes"
 	@echo "    make test-real           idem, incluindo os testes sobre os dados reais"
@@ -103,6 +105,40 @@ dicionario: check-data
 
 dicionario-demo:
 	@$(MAKE) --no-print-directory dicionario DATA=$(AMOSTRA)
+
+# O executor de referência: faz o que o guia descreve que o pipeline do MackSun faz,
+# localmente, sobre o plugin. Carrega o plugin pelo caminho (§13.2), persiste os
+# registros e os lê de volta antes de exportar (§1), e confronta o que o plugin
+# devolve com o que o plano de execução declara.
+#
+# O PYTHONPATH aqui não é conveniência: é o requisito do bloco plugin.dependencies
+# do catálogo — "todas as dependências importadas no arquivo do instrumento devem
+# estar instaladas no ambiente do job" — sendo cumprido. Sem ele o plugin falha
+# dizendo exatamente isso, que é o comportamento desejado.
+TAREFAS ?= DETECTOR:GenerateCSVFileRawFormat,DETECTOR:GenerateFitsFileRawFormat,\
+DETECTOR:GenerateCSVFileRawCountsFormat,POINTING:GenerateCSVFilePointingFormat,\
+POINTING:GenerateFitsFilePointingFormat,DETECTOR:GenerateCSVFileDeconvFormat32ms,\
+DETECTOR:GenerateFitsFileDeconvFormat32ms,DETECTOR+POINTING:GenerateCSVFileLevel1Format100ms,\
+DETECTOR+POINTING:GenerateFitsFileLevel1Format100ms,DETECTOR+POINTING:GenerateCSVFileLevel1Format1s,\
+DETECTOR:GenerateCSVFileDerivedFormat100ms,DETECTOR:GenerateCSVFileDerivedFormat1s
+
+pipeline-falso: check-data
+	@PYTHONPATH="$(CURDIR)" HATSXMLPATH="$(CURDIR)/XMLTables" \
+	    $(PYTHON) tools/pipeline_falso.py --data-dir "$(DATA)" \
+	    --saida SaidaPipelineFalso --tarefas "$(TAREFAS)" \
+	    --extensoes .rbd,.aux --limite-de-horas 1
+
+pipeline-falso-demo:
+	@$(MAKE) --no-print-directory pipeline-falso DATA=$(AMOSTRA)
+
+# Com o documento do suporte, quando ele existir:
+#   make pipeline-falso-catalogo CATALOGO=caminho/instrument_catalog.json
+pipeline-falso-catalogo: check-data
+	@test -n "$(CATALOGO)" || { echo "  passe CATALOGO=caminho/do/instrument_catalog.json"; exit 1; }
+	@PYTHONPATH="$(CURDIR)" HATSXMLPATH="$(CURDIR)/XMLTables" \
+	    $(PYTHON) tools/pipeline_falso.py --data-dir "$(DATA)" \
+	    --saida SaidaPipelineFalso --catalogo "$(CATALOGO)" --instrumento HATS \
+	    --limite-de-horas 1
 
 # Grava os dois formatos para anexar. Fora de Saida/, que é comparada com a do CRAAM
 # byte a byte — qualquer arquivo a mais ali quebraria o `make diff`.
