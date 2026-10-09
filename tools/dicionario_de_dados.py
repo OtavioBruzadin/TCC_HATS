@@ -218,7 +218,9 @@ def documento(rbd, registros, export):
     add("The instrument writes two binary files per hour of observation: the "
         "detector signal, sampled at 1 kHz, and the telescope pointing solution, "
         "written by the control loop about once every 1.05 s. Each one is ingested "
-        "as its own raw source.")
+        "as its own raw source. A third file, written once per day, holds the "
+        "weather station readings at about 5 s; it is not among the structures "
+        "published here.")
     add("")
     add("Five data structures are published. The first four are the structures of "
         "the instrument processing code, under the names they have there; the fifth "
@@ -237,8 +239,12 @@ def documento(rbd, registros, export):
          (hats_export.CAMADA_NIVEL1.nome, "both", "0.1 s and 1 s",
           "reduced set of variables on a uniform time grid")])
     add("")
-    add("In FITS, structures that come from the same file are carried as separate "
-        "table extensions of one file, named after the structure. In CSV, which is "
+    add("In FITS, structures that come from the same source file are carried as "
+        "separate table extensions of one file, named after the structure. "
+        "Structures that come from different source files are published in separate "
+        "FITS files, because the export contract hands the plugin one raw source per "
+        "call: `rData` and `cData` are read from the same file and share one FITS, "
+        "while `aux`, `Deconv` and `Level1` each get their own. In CSV, which is "
         "flat, each structure is a file of its own.")
     add("")
     linhas += tabela(
