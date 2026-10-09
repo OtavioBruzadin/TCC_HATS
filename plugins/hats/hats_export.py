@@ -34,7 +34,7 @@ O `rData` e o `cData` saem do mesmo `.rbd`, na mesma chamada, e por isso cabem n
 mesmo FITS, em duas HDU. O `aux` chega em outra chamada, porque é outra fonte RAW,
 e o `Deconv` é produto derivado: cada um sai no seu arquivo, com a camada de mesmo
 nome. As quatro num único FITS exigiriam o pipeline entregar as três fontes de uma
-vez, e o contrato é de uma fonte por chamada — isto é limite do encanamento, não
+vez, e o contrato é de uma fonte por chamada — isto é limite do pipeline, não
 escolha nossa, e está anotado para a conversa com ele.
 
 No CSV, que é plano, cada estrutura é um arquivo. É por isso que há um método para
