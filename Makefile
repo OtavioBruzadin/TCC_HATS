@@ -29,7 +29,7 @@ DATA    ?= $(HATS_DATA_InputPath)
 ZIP     ?= $(HOME)/Downloads/HATS_software.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help test test-real descreve descreve-demo descreve-arquivo dicionario dicionario-demo pipeline-falso pipeline-falso-demo pipeline-falso-catalogo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
+.PHONY: help test test-real descreve descreve-demo descreve-arquivo dicionario dicionario-demo dicionario-html dicionario-pdf pipeline-falso pipeline-falso-demo pipeline-falso-catalogo run run-diag run-dia run-demo diff-demo erro erro-demo run-craam diff clean config-data check-data bench bench-craam craam-shell verify-binario setup-reference check-reference
 
 help:
 	@echo ""
@@ -52,6 +52,7 @@ help:
 	@echo "    make descreve-demo       idem, sobre Amostra/"
 	@echo "    make descreve-arquivo    grava a descrição em texto e JSON -> Descricao/"
 	@echo "    make dicionario          dicionário de dados dos arquivos -> Descricao/"
+	@echo "    make dicionario-pdf      idem, mais HTML e PDF para anexar"
 	@echo "    make pipeline-falso      roda o fluxo do pipeline sobre o plugin"
 	@echo "    make pipeline-falso-demo idem, sobre Amostra/"
 	@echo ""
@@ -105,6 +106,36 @@ dicionario: check-data
 
 dicionario-demo:
 	@$(MAKE) --no-print-directory dicionario DATA=$(AMOSTRA)
+
+# Versões para anexar num e-mail. O HTML é o intermediário e serve sozinho — abre em
+# qualquer navegador e imprime em PDF com Cmd+P. O alvo do PDF usa o Chrome, que
+# imprime por linha de comando: a máquina não tem pandoc, e instalar um conversor
+# para gerar um anexo seria desproporcional.
+#
+# O .docx foi tentado com o textutil do macOS e NÃO serve: ele achata as tabelas, e
+# este documento é quase todo tabela.
+CHROME ?= /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+
+dicionario-html: dicionario
+	@$(PYTHON) tools/markdown_para_html.py Descricao/HATS-dicionario-de-dados.md \
+	    --saida Descricao/HATS-dicionario-de-dados.html
+
+dicionario-pdf: dicionario-html
+	@test -x "$(CHROME)" || { echo ""; \
+	    echo "  Nao achei o Chrome em:"; echo "    $(CHROME)"; \
+	    echo "  Passe CHROME=... ou abra o HTML e imprima em PDF pelo navegador:"; \
+	    echo "    Descricao/HATS-dicionario-de-dados.html"; echo ""; exit 1; }
+	@"$(CHROME)" --headless --disable-gpu --no-pdf-header-footer \
+	    --virtual-time-budget=4000 \
+	    --print-to-pdf="$(CURDIR)/Descricao/HATS-dicionario-de-dados.pdf" \
+	    "file://$(CURDIR)/Descricao/HATS-dicionario-de-dados.html" >/dev/null 2>&1 || true
+	@test -s Descricao/HATS-dicionario-de-dados.pdf || { \
+	    echo "  o Chrome nao gerou o PDF; imprima o HTML pelo navegador"; exit 1; }
+	@echo ""
+	@echo "  Para anexar:"
+	@ls -l Descricao/HATS-dicionario-de-dados.pdf Descricao/HATS-dicionario-de-dados.html \
+	    | awk '{printf "    %8s  %s\n", $$5, $$9}'
+	@echo ""
 
 # O executor de referência: faz o que o guia descreve que o pipeline do MackSun faz,
 # localmente, sobre o plugin. Carrega o plugin pelo caminho (§13.2), persiste os
