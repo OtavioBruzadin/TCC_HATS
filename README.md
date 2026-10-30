@@ -7,11 +7,16 @@ O HATS observa o Sol em 15 THz (20 µm). O detector é uma célula Golay, que s�
 responde a sinal modulado: a radiação é picada por um chopper a 20 Hz, amostrada
 a 1 kHz, e a amplitude em 20 Hz é extraída por software — um lock-in digital.
 
-**O objetivo é um só: produzir exatamente as mesmas tabelas que o `HATS.py` do
-CRAAM produz, byte a byte, mais rápido.**
+**O objetivo da reimplementação é um só: produzir exatamente as mesmas tabelas que
+o `HATS.py` do CRAAM produz, byte a byte, mais rápido.**
 
 Nada é acrescentado à saída. Sem colunas extras, sem arquivos extras, sem
 relatórios. A organização é a deles.
+
+Sobre essa base, o repositório tem uma segunda frente: o **plugin do HATS para o
+pipeline do MackSun**, que reusa o pacote `hats/` como motor. Ele não toca na saída
+acima, e `make diff` é a porta que garante isso a cada mudança. Ver
+[O plugin do MackSun](#o-plugin-do-macksun) e `plugins/README.md`.
 
 ## Os três comandos
 
@@ -401,6 +406,63 @@ python3 hats_report.py --day 2026-03-17 --hour 1800
 
 As flags, quando dadas, têm precedência. `HATS_FFTProgram` não se aplica: aqui a
 demodulação roda em processo, sem lançar binário externo.
+
+## O plugin do MackSun
+
+O MackSun é o pipeline que publica as séries temporais dos instrumentos do CRAAM
+em `datasets.linea.org.br`. Ele é agnóstico em relação aos instrumentos: a lógica
+específica de cada um fica num plugin, e a comunicação acontece só por contratos.
+
+O plugin do HATS está em `plugins/hats/`, e **reusa este pacote como motor**. Ele é
+um tradutor fino: converte binário em registros, e registros em arquivos
+publicáveis. A conta científica é a mesma que `make diff` valida — e isso é exigido
+por teste, com igualdade exata contra o caminho verificado, não aproximada.
+
+```bash
+make descreve            # a descrição do instrumento, para quem mantém o catálogo
+make dicionario-pdf      # o dicionário de dados dos arquivos publicados
+make pipeline-falso      # executa o fluxo do pipeline sobre o plugin, localmente
+make test                # a suíte inteira, 308 testes
+```
+
+### O que ele publica
+
+Cinco estruturas, em oito produtos, nos dois formatos. As quatro primeiras têm os
+nomes que já têm no `HATS.py`:
+
+| estrutura | origem | resolução | conteúdo |
+|---|---|---|---|
+| `rData` | `.rbd` | 1 ms | canais do detector em contagem crua do ADC |
+| `cData` | `.rbd` | 1 ms | os mesmos canais em unidade física |
+| `aux` | `.aux` | 1,05 s | solução de apontamento |
+| `Deconv` | `.rbd` | 32 ms | amplitude da modulação de 20 Hz — o dado científico |
+| `Level1` | ambos | 0,1 s e 1 s | conjunto reduzido sobre grade temporal uniforme |
+
+É o que o criador do instrumento pediu, item por item, depois de revisar o
+dicionário de dados.
+
+### As três portas
+
+```bash
+make test        # 308 testes
+make test-real   # os mesmos, com os que exigem os arquivos de verdade habilitados
+make diff        # tem de continuar dizendo que não há diferenças
+```
+
+A terceira é a que importa aqui: ela garante que o trabalho do plugin não tocou na
+frente que já estava concluída.
+
+### O que depende do suporte do MackSun
+
+O documento de catálogo do instrumento, que declara chaves de produto, nomes de
+método e fontes de dados brutos. Ele é mantido pela equipe deles, e o guia é
+explícito que não deve ser escrito pelo desenvolvedor — então **não há nenhum neste
+repositório**. Os valores usados são provisórios, ficam todos num arquivo e estão
+marcados como pendentes.
+
+`plugins/README.md` tem o detalhe: os contratos e exatamente o que foi desviado da
+cópia original deles, o requisito de ambiente, e como exercitar o plugin sem o
+MackSun.
 
 ## Projeto irmão
 
