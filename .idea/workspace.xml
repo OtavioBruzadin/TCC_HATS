@@ -4,14 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="537c6486-5a4a-4ca8-9b23-b31a0fe36431" name="Changes" comment="Refactored" />
+    <list default="true" id="537c6486-5a4a-4ca8-9b23-b31a0fe36431" name="Changes" comment="Update workspace.xml embedded indexing settings">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="7118" />
+    <option name="cachedIndexableFilesCount" value="7440" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="Git.Settings">
@@ -43,13 +45,14 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "Git.Working.Tree.Tab.closed.by.user": "closed",
     "RunOnceActivity.MCP Project settings loaded": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "feat/adiciona-prototipos-versao-completa-organizada-e-testes",
+    "git-widget-placeholder": "feat/implementa-plugin",
     "last_opened_file_path": "/Users/otaviobruzadin/PycharmProjects/Hats/TCC_HATS/XMLTables",
     "node.js.detected.package.eslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -140,11 +143,41 @@
       <option name="project" value="LOCAL" />
       <updated>1776366161855</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="Update workspace.xml embedded indexing settings">
+      <option name="closed" value="true" />
+      <created>1790342089315</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1790342089315</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="OPEN_GENERIC_TABS">
+      <map>
+        <entry key="a9167eb6-fe1a-40ee-a632-e9b1e08a2117" value="TOOL_WINDOW" />
+        <entry key="458dc0af-920d-441e-bb74-7c6d538c1a1a" value="TOOL_WINDOW" />
+      </map>
+    </option>
+    <option name="TAB_STATES">
+      <map>
+        <entry key="458dc0af-920d-441e-bb74-7c6d538c1a1a">
+          <value>
+            <State />
+          </value>
+        </entry>
+        <entry key="a9167eb6-fe1a-40ee-a632-e9b1e08a2117">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Add hats_report_v2.py and project setup files&#10;&#10;Introduce the main script for processing HATS files, `hats_report_v2.py`, with support for parsing, reporting, and exporting data. Update project structure with configuration files, a README, and a .gitignore for clarity and organization." />
@@ -152,6 +185,8 @@
     <MESSAGE value="Add JSON reports and update .gitignore&#10;&#10;Added JSON report files summarizing processed data for specified dates, including metadata and statistics. Updated `.gitignore` to exclude the `/Data/` directory for better project organization." />
     <MESSAGE value="Update README with project structure and usage instructions&#10;&#10;Added detailed project structure, usage steps, and clarification on handling HATS data files. This improves clarity for setting up and using the project." />
     <MESSAGE value="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project." />
-    <option name="LAST_COMMIT_MESSAGE" value="Update README with project structure and usage details&#10;&#10;Added instructions on project setup, usage steps, and handling HATS data files. Included a link to a shared Drive folder with example data and reports for improved clarity. This enhances usability and setup guidance for the project." />
+    <MESSAGE value="Refactored" />
+    <MESSAGE value="Update workspace.xml embedded indexing settings" />
+    <option name="LAST_COMMIT_MESSAGE" value="Update workspace.xml embedded indexing settings" />
   </component>
 </project>

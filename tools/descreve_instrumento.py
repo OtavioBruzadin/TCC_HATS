@@ -210,7 +210,7 @@ def coleta(data_dir, day=None, hour=None, record_limit=LIMITE_PADRAO):
             "comparacao": "cerca de cinco vezes o volume diario do POEMAS a 10 ms",
         },
         "consistencia_temporal": {
-            "carimbo_nativo": "husec, centesimos de milissegundo desde 0 UT",
+            "carimbo_nativo": "husec, decimos de milissegundo (100 us) desde 0 UT",
             "resolucao_do_carimbo": "0,1 ms",
             "passo_esperado": "10 husec entre amostras consecutivas",
             "registros_descartados_antes_da_hora":

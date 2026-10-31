@@ -1,7 +1,7 @@
 """
 Conversões da base de tempo do HATS.
 
-O instrumento carimba tudo em husec — centésimos de milissegundo desde 0 UT, com
+O instrumento carimba tudo em husec — décimos de milissegundo (100 µs) desde 0 UT, com
 864.000.000 num dia. A convenção vem do SST.
 """
 

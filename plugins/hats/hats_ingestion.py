@@ -35,7 +35,7 @@ O passo 4 é o "Ponto crítico" do §6
 -----------------------------------
 No POEMAS o problema era outro: o arquivo só traz segundo inteiro, e o plugin
 precisou *inventar* o sub-segundo somando 10 ms por registro. O HATS carimba cada
-amostra em husec — centésimos de milissegundo desde 0 UT — então aqui não há nada
+amostra em husec — décimos de milissegundo (100 µs) desde 0 UT — então aqui não há nada
 a inventar. O trabalho é **verificar**, e a verificação distingue dois casos:
 
   - husec repetido ou em ordem decrescente **falha**. Uma série temporal com

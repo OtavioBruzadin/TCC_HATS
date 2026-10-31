@@ -10,14 +10,16 @@ TARGET_FREQUENCY = 20.0         # Hz, frequência do chopper
 WINDOW_SIZE = 128               # amostras por janela
 STEPS = 32                      # deslocamento entre janelas
 
-# Correção de amplitude da janela flat-top (ISO 18431-1), do windowed_dft.c.
+# Correção de amplitude da janela flat-top (ISO 18431-2), do windowed_dft.c.
+# O windowed_dft.c cita a parte 1, mas a parte 1 é a introdução geral: as
+# janelas são definidas na parte 2, onde a flat-top está na seção 5.3.
 # Escolhida de modo que dividir a saída pelo comprimento da janela já entregue a
 # amplitude de uma senoide pura.
 FLATTOP_CORRECTION = 2.000122419602196
 
 # --- Base de tempo ---------------------------------------------------------
 
-HUSEC_PER_SECOND = 10000        # husec = centésimos de milissegundo
+HUSEC_PER_SECOND = 10000        # husec = décimos de milissegundo (100 µs)
 HUSEC_PER_MINUTE = 600000
 HUSEC_PER_HOUR = 36000000
 HUSEC_PER_DAY = 864000000

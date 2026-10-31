@@ -2,15 +2,18 @@
 Escolha entre o caminho acelerado por numpy e o da biblioteca padrão.
 
 O pacote funciona sem dependência nenhuma. Quando numpy está instalado, as
-mesmas operações rodam vetorizadas — os resultados são equivalentes, verificados
-sobre uma hora de dados: contagens e husec idênticos, amplitudes com erro
-relativo de 9e-16, estatísticas de 6,6e-09, que é ordem de soma.
+mesmas operações rodam vetorizadas.
 
-Medido numa hora de dados (3,6 milhões de registros):
+A série demodulada é idêntica nos dois caminhos: contagens, husec e cada janela
+do `deconv` batem exatamente, o que `TestDemodulation.test_backends_agree_bit_for_bit`
+exige com igualdade estrita. É essa igualdade que permite trocar de backend sem
+abrir mão do bit a bit com a referência do CRAAM.
 
-    HATS.py do CRAAM (numpy + binário C)    1,08 s     828 MB
-    backend stdlib                          4,6  s      34 MB
-    backend numpy                           0,14 s     128 MB
+A estatística por canal é a única saída que difere, em cerca de 1e-9 relativo,
+porque os dois caminhos somam em ordens diferentes. Ela é diagnóstico aditivo,
+fora do que a referência produz, e o motivo da escolha está em `statistics.py`.
+
+Os números de desempenho ficam no README, para não envelhecerem em dois lugares.
 """
 
 from hats import rbd

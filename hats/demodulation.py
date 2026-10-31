@@ -42,7 +42,10 @@ REFERENCE_NOTE = (
 
 
 def flattop_window(length):
-    """Janela flat-top simétrica, ISO 18431-1 tipo 0, como no windowed_dft.c."""
+    """Janela flat-top simétrica, ISO 18431-2 tipo 0, como no windowed_dft.c.
+
+    O windowed_dft.c cita a parte 1; as janelas estão na parte 2, seção 5.3.
+    """
     if length < 2:
         return [constants.FLATTOP_CORRECTION] * length
     denominator = float(length - 1)
